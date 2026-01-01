@@ -1,0 +1,139 @@
+# 프로젝트 지침
+
+## 코드 수정 전 체크리스트
+
+### 필수 확인 사항
+1. **관련 함수 전체 읽기** - 호출하는 쪽, 호출되는 쪽 모두
+2. **비활성화된 코드 확인** - `pass`, 빈 `return`, 주석 처리된 코드
+3. **조건문 분기 확인** - 어떤 조건에서 실행되는지
+
+### 특히 주의
+- `pass`로 비어있는 함수 확인 (주석에 "비활성화됨" 등 표시 있을 수 있음)
+- `enable()` 같은 활성화 함수가 실제로 뭔가를 하는지 확인
+
+## 디버깅 원칙
+
+### 로그 먼저 확인
+```
+문제 발생 시:
+1. 로그에서 마지막으로 실행된 코드 확인
+2. 예상 로그 vs 실제 로그 비교
+3. 로그가 안 찍히면 → 해당 코드가 실행 안 된 것
+```
+
+### 작은 단위 수정
+- 한 번에 하나만 수정
+- 수정 → 테스트 → 로그 확인 → 다음 수정
+- 여러 개 동시 수정 금지
+
+## Edit 도구 오류 대응
+
+"File has been unexpectedly modified" 발생 시:
+1. Python 프로세스 종료 시도 (효과 없을 수 있음)
+2. **즉시 fix_*.py 스크립트 방식으로 전환**
+
+```python
+# 우회 스크립트 예시
+target = 'path/to/file.py'
+with open(target, 'r', encoding='utf-8') as f:
+    content = f.read()
+content = content.replace(old_code, new_code)
+with open(target, 'w', encoding='utf-8') as f:
+    f.write(content)
+```
+
+## 프로젝트 구조
+
+- `src/kakaotalk_a11y_client/` - 메인 소스
+  - `main.py` - 진입점, 핫키/네비게이션 조율
+  - `navigation/` - 탐색 모듈
+    - `context_menu.py` - 컨텍스트 메뉴 처리
+    - `chat_room.py` - 채팅방 메시지 탐색
+  - `keyboard_nav.py` - 키보드 후킹
+- `scripts/` - 유틸리티 스크립트
+
+## 캐시 삭제 (기능 변경/추가 후 필수)
+
+코드 수정 후 테스트 전 **반드시** 파이썬 캐시 삭제 (프로젝트 폴더 한정):
+
+```powershell
+# PowerShell (프로젝트 루트에서 실행)
+Get-ChildItem -Path "C:\project\kakaotalk-a11y-client" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+Get-ChildItem -Path "C:\project\kakaotalk-a11y-client" -Recurse -Filter "*.pyc" | Remove-Item -Force
+```
+
+```bash
+# Bash/Git Bash (프로젝트 루트에서 실행)
+find /c/project/kakaotalk-a11y-client -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
+find /c/project/kakaotalk-a11y-client -type f -name "*.pyc" -delete 2>/dev/null
+```
+
+**캐시 문제 증상:**
+- 코드 수정했는데 이전 동작 유지
+- import 오류 (삭제한 모듈 참조)
+- 예상과 다른 함수 실행
+
+## 실행 방법 (Windows PowerShell)
+
+```powershell
+# 일반 실행
+uv run kakaotalk-a11y
+
+# 디버그 모드 (CLI 옵션)
+uv run kakaotalk-a11y --debug              # DEBUG 레벨 (상태 변경 로그)
+uv run kakaotalk-a11y --debug --trace      # TRACE 레벨 (고빈도 루프 로그 포함)
+uv run kakaotalk-a11y --debug-profile      # 프로파일러만
+uv run kakaotalk-a11y --debug --debug-events        # 이벤트 모니터 포함
+uv run kakaotalk-a11y --debug --debug-dump-on-start # 시작 시 트리 덤프
+
+# 디버그 모드 (환경변수 - 레거시)
+$env:DEBUG=1; uv run kakaotalk-a11y  # DEBUG 레벨
+$env:DEBUG=2; uv run kakaotalk-a11y  # TRACE 레벨
+
+# 디버그 로그 확인
+Get-Content C:\project\kakaotalk-a11y-client\logs\debug.log -Tail 50
+
+# 프로파일 로그 확인
+Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
+```
+
+### 로그 레벨
+
+| 레벨 | 용도 |
+|------|------|
+| TRACE | 고빈도 루프 로그 (포커스 모니터 상태, 메뉴 모드 진입/종료) |
+| DEBUG | 상태 변경, 주요 이벤트 (채팅방 진입, 정리 시작/완료) |
+| INFO | 모드 전환, 로그 파일 경로 |
+| WARNING | 복구 가능한 문제 |
+| ERROR | 치명적 오류 |
+
+### 디버깅 상황별 권장 옵션
+
+- **일반 문제**: `--debug` (DEBUG 이상)
+- **포커스 추적 문제**: `--debug --trace` (TRACE 포함)
+- **성능 분석**: `--debug-profile`
+
+### 디버그 단축키 (--debug 모드에서만)
+- `Ctrl+Shift+D`: 즉시 UIA 트리 덤프
+- `Ctrl+Shift+P`: 프로파일 요약 출력
+- `Ctrl+Shift+R`: 이벤트 모니터 토글
+
+### 디버그 출력 위치
+- 덤프/리포트: `~/.kakaotalk_a11y/debug/`
+- 프로파일 로그: `%TEMP%/kakaotalk_a11y_profile_*.log`
+
+**주의**: `DEBUG=1 uv run ...` 형식은 Linux/bash 전용. Windows에서는 `$env:DEBUG=1;` 사용.
+
+## Git 규칙
+
+상세 지침: [CONTRIBUTING.md](.claude/guides/CONTRIBUTING.md)
+
+### 요약
+- 커밋 형식: `<타입>: <설명>`
+- 타입: feat, fix, refactor, docs, chore
+- 하나의 논리적 변경 = 하나의 커밋
+- 코드 변경 시 관련 문서도 업데이트
+
+### 브랜치
+- 현재: main 직접 커밋
+- 필요시: feat/, fix/, refactor/ 브랜치 사용

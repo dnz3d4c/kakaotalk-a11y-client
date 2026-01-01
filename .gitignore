@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Claude 로컬 설정
+.claude/settings.local.json
+
+# 디버그/덤프 파일
+@AutomationLog.txt
+*dump*.txt
+*_dump*.txt
+focus_log.txt
+*.log
+logs/
+nul
+
+# 샘플 데이터
+samples/
+
+# 루트 임시/백업 파일
+context_menu_backup.py
+kakaotalk.py
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+build/
+dist/

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kakaotalk-a11y-client"
+version = "0.2.0-beta"
+description = "카카오톡 접근성 클라이언트 (시각장애인용)"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "dnz3d4c" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python>=4.8.0",
+    "numpy>=1.24.0",
+    "pyautogui>=0.9.54",
+    "pillow>=10.0.0",
+    "pywin32>=306",
+    "accessible-output2>=0.17",
+    "pyttsx3>=2.90",
+    "uiautomation>=2.0.29",
+    "wxPython>=4.2.0",
+]
+
+[project.optional-dependencies]
+debug = [
+    "keyboard>=0.13.5",
+]
+
+[project.scripts]
+kakaotalk-a11y-console = "kakaotalk_a11y_client.main:main"
+
+[project.gui-scripts]
+kakaotalk-a11y = "kakaotalk_a11y_client.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+]
