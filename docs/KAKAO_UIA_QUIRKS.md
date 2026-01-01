@@ -111,4 +111,8 @@ NVDA 소스코드의 workaround 주석 스타일(#숫자:)을 적용했습니다
 
 - 카카오톡 PC 버전: 3.x.x
 - 테스트 일자: 2025-01
-- NVDA 참고 버전: 2024.x
+
+## 출처
+
+- Workaround 스타일: [NVDA GitHub](https://github.com/nvaccess/nvda) (source/UIAHandler/)
+- 참조 버전: NVDA 2024.x

@@ -366,3 +366,10 @@ class UIACache:
 5. **Workaround 시스템** - 유지보수성이 향상됩니다
 6. CacheRequest - comtypes 직접 사용이 필요합니다 (Phase 2 이후)
 7. ControlType 매핑 - NVDA가 처리하므로 불필요합니다
+
+---
+
+## 출처
+
+- [NVDA GitHub](https://github.com/nvaccess/nvda) - UIAHandler 모듈 (source/UIAHandler/)
+- 참조 버전: NVDA 2024.x
