@@ -38,9 +38,9 @@ dist/KakaotalkA11y/
 
 - **진입점**: `src/kakaotalk_a11y_client/__main__.py`
 - **콘솔 모드**: `console=True` (필수)
-  - `console=False`로 빌드 시 Python 3.14 + PyInstaller 6.17 조합에서 즉시 종료됨
-  - 콘솔 창 숨기기(ShowWindow, FreeConsole)는 프로세스 종료를 유발하여 사용 불가
-  - 콘솔 창 숨기려면 바로가기에서 "최소화 실행" 설정 (아래 참조)
+  - `console=False`로 빌드하면 즉시 종료되는 현상이 발생합니다
+  - 콘솔 창 숨기기(ShowWindow, FreeConsole)는 프로세스 종료를 유발하여 사용할 수 없습니다
+  - 콘솔 창을 숨기려면 바로가기에서 "최소화 실행" 설정을 사용합니다 (아래 참조)
 - **제외된 패키지**: tkinter, unittest, sqlite3 등 미사용 모듈
 
 ### Hidden Imports
@@ -82,7 +82,7 @@ uv run kakaotalk-a11y --console
 dist\KakaotalkA11y\KakaotalkA11y.exe --console
 ```
 
-콘솔 창에서 실행. 디버깅 또는 이전 방식 선호 시 사용.
+콘솔 창에서 실행합니다. 디버깅이나 이전 방식을 선호하는 경우에 사용합니다.
 
 ### 디버그 모드
 
@@ -107,9 +107,9 @@ DEBUG 환경변수 설정 시:
 
 ## 배포
 
-`dist/KakaotalkA11y/` 폴더 전체를 압축하여 배포.
+`dist/KakaotalkA11y/` 폴더 전체를 압축하여 배포합니다.
 
-사용자는 `KakaotalkA11y.exe`를 실행하면 됨.
+사용자는 `KakaotalkA11y.exe`를 실행하면 됩니다.
 
 ## 문제 해결
 
