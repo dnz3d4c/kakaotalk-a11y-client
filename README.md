@@ -21,6 +21,32 @@ NVDA용 카카오톡 추가 기능이 있긴 한데, 뭔가 아쉬웠어요. 특
 
 그리고 카카오톡 개발팀이 참고해서 접근성을 개선해주시면 더 좋겠어요. 스크린 리더 사용자도 공감 이모지를 자유롭게 쓸 수 있는 날이 오길 바라면서요.
 
+## 문서
+
+| 문서 | 설명 |
+|------|------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 모듈 구조, 컴포넌트, 데이터 흐름 |
+| [BUILD.md](docs/BUILD.md) | 빌드/실행 방법, 의존성 |
+| [TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | 디버그 도구, 단축키 |
+| [KAKAO_UIA_QUIRKS.md](docs/KAKAO_UIA_QUIRKS.md) | 카카오톡 UIA 특이사항 |
+| [AI_DEVELOPMENT.md](docs/AI_DEVELOPMENT.md) | AI 개발 방식 |
+
+### 참고 문서
+
+| 문서 | 설명 |
+|------|------|
+| [UIA_완전_가이드.md](docs/UIA_완전_가이드.md) | UIA 기술 가이드 |
+| [NVDA_UIA_패턴_레퍼런스.md](docs/NVDA_UIA_패턴_레퍼런스.md) | NVDA UIA 패턴 |
+| [PROFILER_ANALYSIS.md](docs/PROFILER_ANALYSIS.md) | 성능 분석 |
+
+### AI 프롬프트
+
+| 문서 | 설명 |
+|------|------|
+| [카카오톡_접근성_개선_프롬프트.md](docs/카카오톡_접근성_개선_프롬프트.md) | 접근성 개선 AI 프롬프트 |
+| [카카오톡_UIA_분석도구_프롬프트.md](docs/카카오톡_UIA_분석도구_프롬프트.md) | UIA 분석 AI 프롬프트 |
+| [카카오톡_디버그모드_도구통합_프롬프트.md](docs/카카오톡_디버그모드_도구통합_프롬프트.md) | 디버그 도구 AI 프롬프트 |
+
 ---
 
 ## 라이선스
