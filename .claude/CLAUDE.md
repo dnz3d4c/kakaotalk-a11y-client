@@ -124,6 +124,50 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 
 **주의**: `DEBUG=1 uv run ...` 형식은 Linux/bash 전용. Windows에서는 `$env:DEBUG=1;` 사용.
 
+## 저장소 분리 전략 (로컬 전용)
+
+### 폴더 구조
+| 경로 | 용도 | Git 상태 |
+|------|------|----------|
+| `C:\project\kakaotalk-a11y-client` | 로컬 개발 (이력 보존) | main, push 금지 |
+| `C:\project\kakaotalk-a11y-release` | GitHub 배포용 | main, push 허용 |
+
+### 작업 흐름
+1. **개발**: `kakaotalk-a11y-client`에서 작업
+2. **배포**: 변경사항을 `kakaotalk-a11y-release`에 수동 복사
+3. **커밋**: release 폴더에서만 GitHub push
+
+### 실수 방지
+- `kakaotalk-a11y-client`는 GitHub push 금지
+- 이 폴더에 원격 저장소 추가 금지
+
+---
+
+## AI 문체 다듬기 이력 관리
+
+사용자가 문서의 AI 말투를 다듬는 작업 시 자동으로 이력 기록.
+
+### 트리거 조건
+- "AI 말투", "문체 수정", "자연스럽게 다듬어" 등 키워드 포함
+- 교과서식 표현(`**역할**:`, `**결론**:` 등) → 자연스러운 문장 변환
+- 명사형(~함, ~됨) → 경어체(~합니다) 변환
+
+### 수행 절차
+1. 문서 수정 완료
+2. `docs/DOCUMENT_STYLE_GUIDE.md`에 수정 이력 추가
+3. 형식: 기존 패턴 따름 (날짜-문서명 섹션 + 수정 전/후 표)
+
+### 이력 기록 형식
+```markdown
+## YYYY-MM 문서명 문체 개선
+
+| 위치 | 수정 전 | 수정 후 |
+|------|---------|---------|
+| N행 | `원본 텍스트` | `수정된 텍스트` |
+```
+
+---
+
 ## Git 규칙
 
 상세 지침: [CONTRIBUTING.md](.claude/guides/CONTRIBUTING.md)
