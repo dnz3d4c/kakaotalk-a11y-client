@@ -133,9 +133,12 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 | `C:\project\kakaotalk-a11y-release` | GitHub 배포용 | main, push 허용 |
 
 ### 작업 흐름
-1. **개발**: `kakaotalk-a11y-client`에서 작업
-2. **배포**: 변경사항을 `kakaotalk-a11y-release`에 수동 복사
-3. **커밋**: release 폴더에서만 GitHub push
+1. **개발**: client에서 작업
+2. **커밋**: client에 커밋
+3. **동기화**: 변경 파일을 release에 복사 후 커밋 (제외 파일 제외)
+
+### release 제외 파일
+- `docs/PROJECT_ANALYSIS.md` - 로컬 개발 전용 분석 문서
 
 ### 실수 방지
 - `kakaotalk-a11y-client`는 GitHub push 금지
