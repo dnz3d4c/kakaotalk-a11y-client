@@ -30,6 +30,9 @@ PC 카카오톡을 공식 지원하는 스크린 리더처럼
 ## 희망사항
 카카오톡 팀에서 접근성을 개선해 주셔서 이 프로젝트가 더이상 사용되지 않길 바라봅니다. 그때까지 스크린 리더 사용자분들이 불편 없이 쓸 수 있도록 계속 개선해 나갈게요. 저에게 이미 이런 프로젝트가 있어요. <https://github.com/dnz3d4c/potplayerNVDAAddon>
 
+## 피드백
+버그 리포트나 제안은 [이슈 페이지](https://github.com/dnz3d4c/kakaotalk-a11y-client/issues)에 남겨주세요.
+
 ## 문서
 
 | 문서 | 설명 |
@@ -38,7 +41,7 @@ PC 카카오톡을 공식 지원하는 스크린 리더처럼
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 모듈 구조, 컴포넌트, 데이터 흐름 |
 | [KAKAO_UIA_QUIRKS.md](docs/KAKAO_UIA_QUIRKS.md) | 카카오톡 UIA 특이사항 |
 
-### 개발/기여
+### 개발
 
 | 문서 | 설명 |
 |------|------|
