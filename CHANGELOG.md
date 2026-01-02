@@ -4,6 +4,19 @@
 
 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [0.2.2] - 2026-01-02
+
+### Added
+- 자동 업데이터 (GitHub 릴리스 기반)
+- 비메시지 항목 우클릭 차단
+
+### Changed
+- TTS 엔진 변경 (pyttsx3 → accessible_output2)
+
+### Fixed
+- 팝업메뉴 CPU 스파이크
+- 탐색 시 음성 끊김
+
 ## [0.2.1] - 2026-01-02
 
 ### Added
