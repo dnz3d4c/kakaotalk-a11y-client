@@ -20,34 +20,30 @@
 카카오톡 팀에서 접근성을 개선해 주셔서 이 프로젝트가 더이상 사용되지 않길 바라봅니다. 이미 저에게 이른 프로젝트가 이미 있어요. <https://github.com/dnz3d4c/potplayerNVDAAddon>
 
 ## 문서
-대부분의 문서는 AI(클로드)가 생성했으며 사용자 가이드 등 일부 문서는 인간이 수정함.
 
 | 문서 | 설명 |
 |------|------|
 | [USER_GUIDE.md](docs/USER_GUIDE.md) | 사용자 가이드 - 설치, 단축키, 기능별 사용법 |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 모듈 구조, 컴포넌트, 데이터 흐름 |
+| [KAKAO_UIA_QUIRKS.md](docs/KAKAO_UIA_QUIRKS.md) | 카카오톡 UIA 특이사항 |
+
+### 개발/기여
+
+| 문서 | 설명 |
+|------|------|
 | [BUILD.md](docs/BUILD.md) | 빌드/실행 방법, 의존성 |
 | [TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) | 디버그 도구, 단축키 |
-| [KAKAO_UIA_QUIRKS.md](docs/KAKAO_UIA_QUIRKS.md) | 카카오톡 UIA 특이사항 |
+| [CLAUDE.md](.claude/CLAUDE.md) | Claude Code 작업 지침 |
 | [AI_DEVELOPMENT.md](docs/AI_DEVELOPMENT.md) | AI 개발 방식 |
 
 ### 참고 문서
 
 | 문서 | 설명 |
 |------|------|
-| [UIA_GUIDE.md](docs/UIA_GUIDE.md) | Windows UIA 전반 가이드. 아키텍처, 탐색, 이벤트, Python 패키지 비교 |
-| [NVDA_UIA_PATTERNS.md](docs/NVDA_UIA_PATTERNS.md) | NVDA 소스에서 추출한 UIA 패턴. 신뢰도 판단, 이벤트 처리 로직 |
-| [PROFILER_ANALYSIS.md](docs/PROFILER_ANALYSIS.md) | 프로파일러 측정 결과. 병목 Top 10, SLOW 작업, 빈 항목 통계 |
-
-### AI 프롬프트 예제
-
-바이브 코딩 시 Claude Code에게 작업을 지시한 프롬프트 원본이며, 일부만 포함되었습니다.
-
-| 문서 | 활용 시점 | 내용 |
-|------|----------|------|
-| [카카오톡_접근성_개선_프롬프트.md](docs/카카오톡_접근성_개선_프롬프트.md) | 성능 개선 | 프로파일러, 필터링, 포커스 최적화 등 7개 항목 구현 로드맵 |
-| [카카오톡_UIA_분석도구_프롬프트.md](docs/카카오톡_UIA_분석도구_프롬프트.md) | 분석 도구 개발 | 기존 도구 파악 → 개선 검토 → 신규 개발 프로세스 |
-| [카카오톡_디버그모드_도구통합_프롬프트.md](docs/카카오톡_디버그모드_도구통합_프롬프트.md) | 디버그 기능 통합 | --debug 모드에서 도구 자동 실행, 세션 리포트 |
+| [UIA_GUIDE.md](docs/UIA_GUIDE.md) | Windows UIA 가이드 |
+| [NVDA_UIA_PATTERNS.md](docs/NVDA_UIA_PATTERNS.md) | NVDA UIA 패턴 |
+| [PROFILER_ANALYSIS.md](docs/PROFILER_ANALYSIS.md) | 프로파일러 측정 결과 |
+| [AI 프롬프트 예제](docs/) | 바이브 코딩 프롬프트 원본 (카카오톡_*.md) |
 
 ---
 
