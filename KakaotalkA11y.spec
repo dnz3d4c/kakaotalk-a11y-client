@@ -21,22 +21,18 @@ a = Analysis(
         'kakaotalk_a11y_client.navigation.chat_room',
         'kakaotalk_a11y_client.navigation.message_monitor',
         'kakaotalk_a11y_client.utils',
-        # wxPython GUI
-        'wx',
-        'wx.adv',
-        'kakaotalk_a11y_client.gui',
-        'kakaotalk_a11y_client.gui.app',
-        'kakaotalk_a11y_client.gui.main_frame',
-        'kakaotalk_a11y_client.gui.tray_icon',
-        'kakaotalk_a11y_client.gui.settings_dialog',
-        'kakaotalk_a11y_client.gui.hotkey_panel',
-        'kakaotalk_a11y_client.gui.status_panel',
+        # IPC 서버
+        'kakaotalk_a11y_client.ipc',
+        'kakaotalk_a11y_client.ipc.server',
+        'kakaotalk_a11y_client.ipc.protocol',
+        'kakaotalk_a11y_client.ipc.handlers',
     ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[
-        # tkinter (미사용, wx 사용)
+        # GUI 프레임워크 (Tauri GUI 사용, Python GUI 불필요)
         'tkinter', '_tkinter', 'tcl', 'tk',
+        'wx', 'wx.adv',
         # 테스트/문서 모듈
         'unittest', 'test', 'pydoc', 'doctest',
         # 네트워크/이메일 (미사용)

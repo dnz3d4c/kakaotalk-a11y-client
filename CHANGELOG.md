@@ -4,6 +4,12 @@
 
 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [0.3.2] - 2026-01-03
+
+### Fixed
+- PyInstaller spec 파일 업데이트 (wxPython → IPC 모듈)
+- 빌드 바이너리 정상화
+
 ## [0.3.1] - 2026-01-03
 
 ### Fixed
