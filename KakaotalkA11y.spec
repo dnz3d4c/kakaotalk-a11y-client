@@ -52,7 +52,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='KakaotalkA11y',
+    name='KakaotalkA11y-core',  # Python 백엔드 (Tauri GUI가 실행)
     debug=False,
     strip=False,
     upx=True,

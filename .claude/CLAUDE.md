@@ -154,6 +154,29 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 
 ---
 
+## 문서 업데이트 자동화
+
+작업 완료 후 해당 트리거에 맞는 문서를 자동으로 업데이트.
+
+### 트리거별 필수 업데이트
+
+| 트리거 | 문서 | 체크 |
+|--------|------|------|
+| **릴리즈 준비** | CHANGELOG.md | 변경사항 추가 |
+| | README.md | 버전 번호 (있으면) |
+| | USER_GUIDE.md | 기능 변경 반영 |
+| **아키텍처 변경** | ARCHITECTURE.md | 모듈 구조, 계층도 |
+| | BUILD.md | 빌드 방식 변경 |
+| **지침 변경** | CLAUDE.md | 새 규칙 추가 |
+| | CONTRIBUTING.md | 기여 규칙 |
+
+### 수동 관리 문서 (거의 안 바뀜)
+- `UIA_*.md`, `NVDA_*.md` - 참고 문서
+- `AI_*.md` - 프롬프트 예시
+- `DOCUMENT_STYLE_GUIDE.md` - 문체 수정 이력
+
+---
+
 ## AI 문체 다듬기 이력 관리
 
 사용자가 문서의 AI 말투를 다듬는 작업 시 자동으로 이력 기록.
