@@ -66,7 +66,8 @@ PC 카카오톡을 공식 지원하는 스크린 리더처럼
 | [UIA_GUIDE.md](docs/UIA_GUIDE.md) | Windows UIA 가이드 |
 | [NVDA_UIA_PATTERNS.md](docs/NVDA_UIA_PATTERNS.md) | NVDA UIA 패턴 |
 | [PROFILER_ANALYSIS.md](docs/PROFILER_ANALYSIS.md) | 프로파일러 측정 결과 |
-| [AI 프롬프트 예제](docs/) | 바이브 코딩 프롬프트 원본 (카카오톡_*.md) |
+| [AI_PROMPT_EXAMPLES.md](docs/AI_PROMPT_EXAMPLES.md) | 비개발자/바이브 코딩용 프롬프트 예시 |
+| [카카오톡_*.md](docs/) | Claude Code 개발 지시 프롬프트 |
 
 ---
 
