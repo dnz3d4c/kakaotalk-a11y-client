@@ -14,7 +14,7 @@ KAKAOTALK_LIST_CLASS = "EVA_VH_ListControl_Dblclk"
 
 # 창 제목 패턴 (win32gui 기준)
 # 메인 창: "카카오톡" (정확히 일치)
-# 채팅방 창: 상대방 이름 (예: "홍길동", "홍길동")
+# 채팅방 창: 상대방 이름 (예: "홍길동")
 # 기타 창: 빈 제목, "KakaoTalk Dialog", 배너 등
 MAIN_WINDOW_TITLE = "카카오톡"  # 정확히 일치하는 것만
 EXCLUDE_TITLES = ["", "KakaoTalk Dialog", "WebStoreBanner Dialog"]  # 제외할 제목
