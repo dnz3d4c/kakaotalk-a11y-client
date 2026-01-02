@@ -28,16 +28,16 @@ class KakaoA11yApp(wx.App):
         return True
 
     def _check_update_background(self) -> None:
-        """백그라운드 업데이트 확인"""
+        """백그라운드 업데이트 확인 (4시간 간격 체크)"""
         import threading
 
         def check():
             try:
-                from ..updater import check_for_update, is_frozen
+                from ..updater import check_for_update_if_needed, is_frozen
                 if not is_frozen():
                     return
 
-                info = check_for_update()
+                info = check_for_update_if_needed()
                 if info:
                     # GUI 스레드에서 알림 표시
                     wx.CallAfter(self._show_update_notification, info)

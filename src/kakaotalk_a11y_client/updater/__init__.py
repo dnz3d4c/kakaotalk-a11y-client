@@ -23,13 +23,18 @@ from ..utils.debug import get_logger
 
 log = get_logger("Updater")
 
+# 업데이트 체크 간격 (초)
+CHECK_INTERVAL = 4 * 60 * 60  # 4시간
+
 __all__ = [
     "UpdateInfo",
     "check_for_update",
+    "check_for_update_if_needed",
     "start_download",
     "apply_and_restart",
     "cleanup",
     "is_frozen",
+    "CHECK_INTERVAL",
 ]
 
 
@@ -73,6 +78,36 @@ def check_for_update() -> Optional[UpdateInfo]:
         release_notes=release.get("body", "변경사항 없음"),
         download_url=download_url,
     )
+
+
+def check_for_update_if_needed() -> Optional[UpdateInfo]:
+    """간격 체크 후 필요시에만 업데이트 확인.
+
+    마지막 체크 후 CHECK_INTERVAL(4시간) 미경과 시 스킵.
+
+    Returns:
+        새 버전이 있으면 UpdateInfo, 없거나 스킵하면 None
+    """
+    import time
+
+    from ..settings import get_settings
+
+    settings = get_settings()
+    last_check = settings.get_last_update_check()
+    now = time.time()
+
+    if (now - last_check) < CHECK_INTERVAL:
+        elapsed_hours = (now - last_check) / 3600
+        log.debug(f"체크 간격 미충족 ({elapsed_hours:.1f}h < 4h), 스킵")
+        return None
+
+    info = check_for_update()
+
+    # 체크 시간 저장 (성공/실패 무관)
+    settings.set_last_update_check(now)
+    settings.save()
+
+    return info
 
 
 def start_download(

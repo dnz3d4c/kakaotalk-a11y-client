@@ -49,6 +49,7 @@ NVDA 등 스크린 리더 사용자를 위한 카카오톡 접근성 향상 도�
 src/kakaotalk_a11y_client/
 ├── main.py                 # 진입점, 전체 조율
 ├── hotkeys.py              # RegisterHotKey 기반 전역 핫키
+├── mouse_hook.py           # 마우스 훅 (비메시지 항목 우클릭 차단)
 ├── accessibility.py        # 음성 출력 추상화
 ├── window_finder.py        # 카카오톡 창 탐색
 ├── detector.py             # 이모지 탐지 (OpenCV)
@@ -142,7 +143,34 @@ class HotkeyManager:
 
 RegisterHotKey API를 사용하기 때문에 NVDA 같은 스크린 리더와 충돌 없이 동작합니다.
 
-### 3.3 ChatRoomNavigator (navigation/chat_room.py)
+### 3.3 MouseHook (mouse_hook.py)
+
+WH_MOUSE_LL 훅을 사용해 비메시지 항목에서 우클릭을 차단합니다.
+
+**차단 대상:**
+- 날짜 구분자 (`2026년 1월 2일 금요일`)
+- 읽지 않음 구분선 (`읽지 않은 메시지`)
+- 입퇴장 알림 (`님이 들어왔습니다`, `님이 나갔습니다`)
+
+**설계 결정:**
+
+메뉴가 열린 후 ESC로 닫는 방식은 메뉴가 열렸다 닫히는 UX 문제가 있습니다. WH_MOUSE_LL 훅으로 우클릭 자체를 차단하면 팝업메뉴가 아예 열리지 않아 더 자연스럽습니다.
+
+```python
+class MouseHook:
+    # 비메시지 패턴 (팝업메뉴 차단 대상)
+    NON_MESSAGE_PATTERNS = ["년 ", "읽지 않은 메시지", ...]
+
+    def _mouse_callback(self, nCode, wParam, lParam):
+        if wParam == WM_RBUTTONDOWN:
+            if self._is_non_message_item(last_focused_name):
+                return 1  # 이벤트 차단
+        return CallNextHookEx(...)
+```
+
+주의: 마우스 훅은 시스템 전체에 영향을 주므로, 현재 포커스된 항목(`_last_focused_name`)이 비메시지 패턴일 때만 차단합니다.
+
+### 3.4 ChatRoomNavigator (navigation/chat_room.py)
 
 채팅방 메시지를 UIA로 탐색하는 클래스입니다.
 
@@ -160,7 +188,7 @@ class ChatRoomNavigator:
 - `exit_chat_room()`: 채팅방 이탈, 리소스 정리
 - `refresh_messages()`: 메시지 목록 새로고침
 
-### 3.4 MessageMonitor (navigation/message_monitor.py)
+### 3.5 MessageMonitor (navigation/message_monitor.py)
 
 새 메시지를 자동으로 읽어주는 클래스입니다.
 
@@ -348,9 +376,8 @@ def uia_operation():
 |-----------|------|
 | uiautomation | UIA 래퍼 |
 | pyautogui | 화면 캡처, 마우스 클릭 |
-| opencv-python | 이모지 템플릿 매칭 |
+| opencv-python-headless | 이모지 템플릿 매칭 |
 | accessible_output2 | 스크린 리더 연동 |
-| pyttsx3 | TTS fallback |
 | wxPython | 시스템 트레이 GUI |
 
 ### 스크린 리더 연동
@@ -436,6 +463,39 @@ UIA StructureChanged 이벤트를 사용합니다.
 트레이드오프:
 - COM 이벤트 핸들러 등록이 필요합니다.
 - 카카오톡 UIA 구조 변경 시 대응이 필요합니다.
+
+### ADR-004: MessageMonitor pause/resume 패턴
+
+팝업메뉴 열림/닫힘 시 `stop()/start()` 대신 `pause()/resume()`을 사용합니다.
+
+**문제 상황:**
+팝업메뉴가 열리면 hwnd가 채팅방에서 메뉴 창(EVA_Menu)으로 변경됩니다.
+이때 MessageMonitor를 중지했다가 메뉴 닫힘 후 재시작하면 다음 오버헤드가 발생합니다:
+
+- `pythoncom.CoInitialize()` - 스레드별 COM 초기화
+- `CreateObject(CUIAutomation)` - UIA 클라이언트 생성
+- `AddStructureChangedEventHandler()` - 이벤트 핸들러 등록 (cross-process)
+- `RemoveStructureChangedEventHandler()` - 이벤트 핸들러 해제
+
+이 과정에서 500ms~1초의 CPU 스파이크가 발생할 수 있습니다.
+
+**해결책:**
+```python
+# pause: 이벤트 수신은 유지, 콜백만 무시
+def _on_structure_changed(self, change_type):
+    if not self._running or self._paused:  # paused 체크 추가
+        return
+    # 이벤트 처리...
+```
+
+**장점:**
+- COM 재등록 오버헤드 없음 (핸들러 유지)
+- 이벤트 손실 없음 (메뉴 닫힘 후 즉시 처리 재개)
+- 메뉴 감지 정확도와 무관하게 안정적으로 동작
+
+**참고 자료:**
+- [Microsoft UIA Caching](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-cachingforclients): UIA cross-process 호출 비용
+- [pywinauto UIA performance](https://github.com/pywinauto/pywinauto/issues/256): UIA 백엔드 성능 이슈
 
 ---
 

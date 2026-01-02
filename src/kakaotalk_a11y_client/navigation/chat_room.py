@@ -29,6 +29,7 @@ class ChatRoomNavigator:
         self.chat_control: Optional[auto.Control] = None
         self.list_control: Optional[auto.Control] = None  # 메시지 목록 ListControl
         self.is_active: bool = False
+        self._hwnd: int = 0  # 캐시 키용 창 핸들
 
     def enter_chat_room(self, hwnd: int) -> bool:
         """채팅방 진입, 메시지 목록 로드
@@ -43,6 +44,7 @@ class ChatRoomNavigator:
             # 스레드에서 UIA 사용 시 COM 초기화 필요
             pythoncom.CoInitialize()
 
+            self._hwnd = hwnd  # 캐시 키용 저장
             self.chat_control = auto.ControlFromHandle(hwnd)
             if not self.chat_control:
                 return False
@@ -62,6 +64,7 @@ class ChatRoomNavigator:
         self.messages = []
         self.chat_control = None
         self.list_control = None
+        self._hwnd = 0
 
     def refresh_messages(self, use_cache: bool = True) -> bool:
         """메시지 목록 새로고침 (NVDA 패턴: TTL 캐싱 적용)
@@ -77,17 +80,17 @@ class ChatRoomNavigator:
 
         with debug_tools.debug_operation('chat_room.refresh_messages'):
             try:
-                # 캐시 확인 (TTL 0.3초)
-                cache_key = f"messages_{id(self.chat_control)}"
+                # 캐시 확인 (hwnd 기반 키로 히트율 개선)
+                cache_key = f"messages_{self._hwnd}"
                 if use_cache:
                     cached = message_list_cache.get(cache_key)
                     if cached is not None:
                         self.messages = cached
                         return len(self.messages) > 0
 
-                # 채팅방 내 메시지 리스트 찾기
+                # 채팅방 내 메시지 리스트 찾기 (searchDepth 4로 축소하여 탐색 비용 절감)
                 msg_list = safe_uia_call(
-                    lambda: self.chat_control.ListControl(Name="메시지", searchDepth=5),
+                    lambda: self.chat_control.ListControl(Name="메시지", searchDepth=4),
                     default=None,
                     error_msg="메시지 리스트 찾기"
                 )

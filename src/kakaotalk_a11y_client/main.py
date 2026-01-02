@@ -19,6 +19,7 @@ from .window_finder import (
     check_uia_available,
     is_kakaotalk_chat_window,
     is_kakaotalk_window,
+    find_kakaotalk_menu_window,
 )
 from .detector import capture_region, detect_emojis, load_templates, format_detection_result
 from .clicker import click_emoji
@@ -31,10 +32,11 @@ from .accessibility import (
     announce_selection,
 )
 from .hotkeys import HotkeyManager, wait_for_exit
+from .mouse_hook import MouseHook
 from .navigation import ChatRoomNavigator
 from .navigation.message_monitor import MessageMonitor
 from .utils.debug import get_logger, is_debug_enabled, get_log_file_path, set_global_level, LogLevel
-from .utils.profiler import profiler, profile_logger
+from .utils.profiler import profiler, profile_logger, init_profiler
 
 log = get_logger("Main")
 
@@ -54,9 +56,15 @@ class EmojiClicker:
         self.message_monitor = MessageMonitor(self.chat_navigator)
         self._in_navigation_mode = False
         self._in_context_menu_mode = False
+        self._menu_exit_count: int = 0  # 메뉴 종료 감지 카운터 (UIA 느린 응답 대응)
+        self._menu_closed_time: float = 0.0  # 메뉴 닫힌 시간 (grace period용)
         self._current_chat_hwnd: Optional[int] = None
         self._focus_monitor_running = False
         self._focus_thread: Optional[threading.Thread] = None
+        self._last_focused_name: Optional[str] = None  # 마지막 포커스된 항목 이름
+
+        # 마우스 훅 (비메시지 항목 우클릭 차단)
+        self.mouse_hook = MouseHook(lambda: self._last_focused_name)
 
     def initialize(self) -> bool:
         """초기화 - 템플릿 로드 및 핫키 등록"""
@@ -216,7 +224,7 @@ class EmojiClicker:
 
         최적화:
         1. 조건부 polling - 카카오톡 창 활성화 시에만 UIA 호출
-        2. 웜업 기간 - 초기 3초간 느린 polling으로 CPU 부하 방지
+        2. 동적 웜업 - UIA 초기화 완료 시 바로 시작 (시스템 속도에 따라 자동 조정)
         3. 적응형 polling - 상태에 따라 간격 조절
         """
         import uiautomation as auto
@@ -224,33 +232,103 @@ class EmojiClicker:
 
         pythoncom.CoInitialize()
         try:
-            last_focused_name = None
             last_focused_type = None
             start_time = time.time()
-            warmup_duration = 3.0  # 웜업 기간 3초
+            max_warmup = 5.0  # 최대 대기 시간 (안전장치)
 
+            # UIA 비동기 초기화 (CPU 스파이크를 웜업 기간에 소화)
+            uia_ready = threading.Event()
+
+            def _warmup_uia():
+                try:
+                    # 별도 스레드에서 COM 초기화 필요
+                    pythoncom.CoInitialize()
+                    try:
+                        _ = auto.GetFocusedControl()
+                        log.debug("UIA 캐시 워밍업 완료")
+                    finally:
+                        pythoncom.CoUninitialize()
+                except Exception as e:
+                    log.warning(f"UIA 워밍업 실패: {e}")
+                finally:
+                    uia_ready.set()
+
+            warmup_thread = threading.Thread(target=_warmup_uia, daemon=True)
+            warmup_thread.start()
+
+            # 초기화 완료 또는 최대 시간까지 대기
             while self._focus_monitor_running:
-                current_time = time.time()
-                elapsed = current_time - start_time
+                elapsed = time.time() - start_time
+                if uia_ready.is_set():
+                    log.debug(f"UIA 워밍업 완료, {elapsed:.2f}초 소요")
+                    break
+                if elapsed >= max_warmup:
+                    log.warning(f"UIA 워밍업 타임아웃 ({max_warmup}초)")
+                    break
+                time.sleep(0.1)
 
-                # 웜업 기간 중에는 느리게 (500ms)
-                if elapsed < warmup_duration:
-                    time.sleep(0.5)
-                    continue
+            # 이후 정상 포커스 모니터링
+            while self._focus_monitor_running:
 
-                # 카카오톡 창이 아니면 UIA 호출 안 함 (CPU 절약)
+                # 1. 메뉴 창 존재 여부 확인 (포그라운드와 무관하게 visible한 EVA_Menu 찾기)
+                menu_hwnd = find_kakaotalk_menu_window()
                 fg_hwnd = win32gui.GetForegroundWindow()
+
+                if menu_hwnd:
+                    # 메뉴 창 존재 → 메뉴 모드
+                    if not self._in_context_menu_mode:
+                        self._in_context_menu_mode = True
+                        # MessageMonitor pause (stop 대신 - COM 재등록 오버헤드 방지)
+                        if self.message_monitor and self.message_monitor.is_running():
+                            self.message_monitor.pause()
+                        log.trace(f"메뉴 모드 자동 진입 (menu_hwnd={menu_hwnd})")
+
+                    # grace period 갱신
+                    self._menu_closed_time = time.time()
+
+                    # 메뉴 항목 읽기 (UIA로)
+                    try:
+                        focused = auto.GetFocusedControl()
+                        if focused and focused.ControlTypeName == 'MenuItemControl':
+                            name = focused.Name or ""
+                            if name and name != self._last_focused_name:
+                                self._last_focused_name = name
+                                last_focused_type = 'MenuItemControl'
+                                speak(name)
+                    except Exception:
+                        pass
+
+                    time.sleep(0.15)  # 메뉴 모드: 빠른 폴링
+                    continue
+                else:
+                    # 메뉴 창 없음 → 메뉴 모드 종료
+                    if self._in_context_menu_mode:
+                        self._in_context_menu_mode = False
+                        self._menu_closed_time = time.time()
+                        # MessageMonitor resume (start 대신 - COM 재등록 오버헤드 방지)
+                        if self.message_monitor and self.message_monitor.is_running():
+                            self.message_monitor.resume()
+                        log.trace("메뉴 모드 자동 종료")
+
+                # 2. 카카오톡 창이 아니면 UIA 호출 안 함 (CPU 절약)
                 if not fg_hwnd or not is_kakaotalk_window(fg_hwnd):
                     # 비활성 상태: 네비게이션 모드 종료 (컨텍스트 메뉴 모드가 아닐 때만)
                     if self._in_navigation_mode and not self._in_context_menu_mode:
                         self._exit_navigation_mode()
-                    # 탭 모드는 유지 (다른 창 갔다 와도 복원)
-                    last_focused_name = None
+                    # 메뉴 모드 종료
+                    if self._in_context_menu_mode:
+                        self._in_context_menu_mode = False
+                        self._menu_closed_time = time.time()
+                        # MessageMonitor resume
+                        if self.message_monitor and self.message_monitor.is_running():
+                            self.message_monitor.resume()
+                        log.trace("메뉴 모드 자동 종료 (비카카오톡 창)")
+                    self._last_focused_name = None
                     last_focused_type = None
                     time.sleep(0.5)
                     continue
 
-                # 채팅방 창이면 자동으로 네비게이션 모드 진입
+                # 3. 채팅방 창이면 자동으로 네비게이션 모드 진입
                 is_chat = is_kakaotalk_chat_window(fg_hwnd)
                 log.trace(f"포커스 모니터: hwnd={fg_hwnd}, is_chat={is_chat}, nav_mode={self._in_navigation_mode}")
                 if is_chat:
@@ -259,60 +337,35 @@ class EmojiClicker:
                         self._enter_navigation_mode(fg_hwnd)
                         log.debug(f"채팅방 진입 결과: nav_mode={self._in_navigation_mode}")
                 else:
-                    # 메인 창이면 네비게이션 모드 종료 (컨텍스트 메뉴 모드가 아닐 때만)
+                    # 메인 창이면 네비게이션 모드 종료
+                    # grace period: 메뉴 닫힌 후 1초간은 MessageMonitor 중지 방지
                     if self._in_navigation_mode and not self._in_context_menu_mode:
-                        self._exit_navigation_mode()
+                        grace_period = 1.0
+                        if time.time() - self._menu_closed_time > grace_period:
+                            self._exit_navigation_mode()
+                        else:
+                            log.trace("메뉴 닫힘 grace period - MessageMonitor 유지")
 
+                # 4. ListItemControl 읽기 (메뉴가 아닌 경우에만 여기 도달)
                 try:
-                    # 카카오톡 창일 때만 UIA 호출
                     focused = auto.GetFocusedControl()
                     if focused:
                         control_type = focused.ControlTypeName
                         name = focused.Name or ""
 
-                        # MenuItemControl은 읽기 (메뉴는 별도 창)
-                        # 카카오톡 기본 메뉴 동작 사용, 포커스된 항목 이름만 읽어줌
-                        if control_type == 'MenuItemControl':
-                            # 메뉴 모드 자동 진입
-                            if not self._in_context_menu_mode:
-                                self._in_context_menu_mode = True
-                                log.trace("메뉴 모드 자동 진입")
-
-                            # 메뉴 항목 직접 발화 (NVDA가 카카오톡 메뉴 못 읽음)
-                            if name and name != last_focused_name:
-                                last_focused_name = name
-                                last_focused_type = control_type
-                                speak(name)
-
-                        # ListItemControl도 읽기 (이미 카카오톡 창 확인됨)
-                        elif control_type == 'ListItemControl':
-                            # 메뉴 모드 자동 종료
-                            if self._in_context_menu_mode:
-                                self._in_context_menu_mode = False
-                                log.trace("메뉴 모드 자동 종료")
-
-                            if name and name != last_focused_name:
-                                last_focused_name = name
+                        if control_type == 'ListItemControl':
+                            if name and name != self._last_focused_name:
+                                self._last_focused_name = name
                                 last_focused_type = control_type
                                 self._speak_item(name, control_type)
                         else:
-                            # 메뉴 모드 자동 종료
-                            if self._in_context_menu_mode:
-                                self._in_context_menu_mode = False
-                                log.trace("메뉴 모드 자동 종료")
-                            last_focused_name = None
+                            self._last_focused_name = None
                             last_focused_type = None
 
                 except Exception:
                     pass
 
-                # 적응형 polling 간격 (CPU 부하 감소)
-                if self._in_context_menu_mode:
-                    interval = 0.25  # 메뉴 모드: 250ms (150ms→250ms)
-                else:
-                    interval = 0.3   # 평상시: 300ms
-
-                time.sleep(interval)
+                time.sleep(0.3)  # 평상시: 300ms
         finally:
             pythoncom.CoUninitialize()
 
@@ -331,8 +384,8 @@ class EmojiClicker:
             if clean_name[0].isalpha() and ord(clean_name[1]) >= 0xAC00:
                 clean_name = clean_name[1:]
 
-        # interrupt=False: 이전 발화 중단 안 함 (발화 잘림 방지)
-        speak(clean_name, interrupt=False)
+        # interrupt=True: 빠른 탐색 시 이전 발화 중단하고 최신 항목만 읽기
+        speak(clean_name, interrupt=True)
 
     def run(self, use_gui: bool = True) -> None:
         """메인 루프 실행
@@ -354,6 +407,9 @@ class EmojiClicker:
                 log.debug(f"상세: {uia_result['error_detail']}")
         else:
             log.debug("UIA 체크 통과")
+
+        # 마우스 훅 설치 (비메시지 항목 우클릭 차단)
+        self.mouse_hook.install()
 
         self.hotkey_manager.start()
         self._start_focus_monitor()
@@ -396,6 +452,9 @@ class EmojiClicker:
 
         # 3. hotkey_manager 정리
         self.hotkey_manager.cleanup()
+
+        # 4. 마우스 훅 해제
+        self.mouse_hook.uninstall()
 
         speak("종료")
         time.sleep(0.3)  # 스크린 리더가 읽을 시간 확보
@@ -495,17 +554,22 @@ def main() -> int:
         else:
             set_global_level(LogLevel.DEBUG)
             print("[DEBUG] 디버그 모드 활성화")
+        init_profiler(enabled=True)
         init_debug_mode(
             enabled=True,
             enable_event_monitor=args.debug_events,
         )
     elif args.debug_profile:
+        init_profiler(enabled=True)
         init_debug_mode(
             enabled=True,
             enable_inspector=False,
             enable_event_monitor=False,
         )
         print("[DEBUG] 프로파일러 전용 모드")
+    else:
+        # 환경변수 기반 초기화 (하위 호환)
+        init_profiler()
 
     # 시작 시 덤프
     if args.debug_dump_on_start and debug_config.enabled:

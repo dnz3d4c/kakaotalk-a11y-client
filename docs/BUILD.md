@@ -60,7 +60,6 @@ datas=[
 PyInstaller가 자동 감지하지 못하는 모듈:
 
 - `accessible_output2.*` - 스크린 리더 출력
-- `pyttsx3.*` - TTS 엔진
 - `uiautomation` - UI 자동화
 - `win32api`, `win32con`, `win32gui` - Windows API
 - `wx`, `wx.adv` - wxPython GUI

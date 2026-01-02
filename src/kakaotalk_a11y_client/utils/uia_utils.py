@@ -352,7 +352,7 @@ def find_all_descendants(
     results = []
 
     def _traverse(el, depth):
-        if depth > max_depth:
+        if depth >= max_depth:  # >= 로 변경하여 조기 종료 (불필요한 재귀 호출 방지)
             return
         try:
             children = el.GetChildren()
@@ -383,7 +383,7 @@ def find_first_descendant(
         조건에 맞는 첫 요소 또는 None
     """
     def _traverse(el, depth):
-        if depth > max_depth:
+        if depth >= max_depth:  # >= 로 변경하여 조기 종료
             return None
         try:
             for child in el.GetChildren():
@@ -830,9 +830,9 @@ def is_focus_in_control(parent_control: auto.Control) -> bool:
         if focused == parent_control:
             return True
 
-        # 부모 체인을 따라 올라가며 확인
+        # 부모 체인을 따라 올라가며 확인 (대부분 3~5단계에서 매칭)
         current = focused
-        for _ in range(20):  # 최대 20단계
+        for _ in range(12):  # 20→12로 축소
             parent = current.GetParentControl()
             if not parent:
                 break
@@ -864,7 +864,7 @@ def is_focus_in_message_list() -> bool:
             return False
 
         current = focused
-        for _ in range(20):
+        for _ in range(12):  # 20→12로 축소 (대부분 3~5단계에서 매칭)
             if not current:
                 break
             # ClassName AND Name 둘 다 매칭

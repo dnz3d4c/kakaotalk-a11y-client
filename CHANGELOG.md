@@ -4,6 +4,11 @@
 
 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [0.2.3] - 2026-01-03
+
+### Changed
+- 업데이트 체크 간격 제한 (4시간 이내 재시작 시 API 호출 스킵)
+
 ## [0.2.2] - 2026-01-02
 
 ### Added

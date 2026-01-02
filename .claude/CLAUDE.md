@@ -193,3 +193,34 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 ### 브랜치
 - 현재: main 직접 커밋
 - 필요시: feat/, fix/, refactor/ 브랜치 사용
+
+### 변경 이력 작성
+
+**요약 (사용자용)**: 결과 중심, 한 줄
+- "이모지 감지 속도 개선"
+- "채팅방 진입 시 오류 수정"
+
+**상세 (개발자용)**: 기술적 내용 OK
+- "find_all_descendants 조기종료, searchDepth 15→10"
+
+```markdown
+## v0.2.3
+
+### 개선
+- 이모지 감지 속도 향상
+
+### 수정
+- 특정 상황에서 채팅방 진입 실패하던 문제
+
+### 기타
+- opencv-python → headless로 교체
+- 구버전 문서 정리
+
+<details>
+<summary>상세 변경 로그</summary>
+
+- find_all_descendants 조기종료, searchDepth 15→10
+- 포커스 부모 탐색 깊이 제한 20→12
+- PACKAGES.md 삭제 (초기 기획 문서)
+</details>
+```

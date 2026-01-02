@@ -363,6 +363,7 @@ class MessageEvent:
     new_count: int
     timestamp: float
     source: str  # "event" or "polling"
+    children: list = None  # GetChildren() 결과 (이중 호출 방지)
 
 
 class MessageListMonitor:
@@ -370,6 +371,11 @@ class MessageListMonitor:
 
     StructureChanged 이벤트로 메시지 추가 감지.
     comtypes 필수.
+
+    pause/resume 패턴:
+    - pause(): 이벤트 수신 유지, 콜백만 무시 (COM 재등록 오버헤드 없음)
+    - resume(): 콜백 처리 재개
+    - 팝업메뉴 열림/닫힘 시 stop/start 대신 사용하여 CPU 스파이크 방지
     """
 
     def __init__(self, list_control: auto.Control):
@@ -380,6 +386,8 @@ class MessageListMonitor:
         self.list_control = list_control
 
         self._running = False
+        self._paused = False  # pause 상태 (이벤트 수신은 유지, 콜백만 무시)
+        self._pause_time = 0.0  # 마지막 pause 시각 (debounce용)
         self._thread: Optional[threading.Thread] = None
         self._callback: Optional[Callable[[MessageEvent], None]] = None
         self._last_count = 0
@@ -424,11 +432,42 @@ class MessageListMonitor:
     def stop(self) -> None:
         """모니터링 중지"""
         self._running = False
+        self._paused = False
 
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
         log.debug("MessageListMonitor 중지됨")
+
+    def pause(self) -> None:
+        """이벤트 처리 일시 중지 (핸들러 유지, COM 재등록 없음)
+
+        팝업메뉴 열릴 때 호출. 이벤트는 계속 수신하지만 콜백 무시.
+        """
+        if not self._paused:
+            self._paused = True
+            self._pause_time = time.time()
+            log.debug("MessageListMonitor 일시 중지")
+
+    def resume(self) -> None:
+        """이벤트 처리 재개
+
+        팝업메뉴 닫힐 때 호출. 콜백 처리 다시 시작.
+        debounce: pause 후 0.3초 이내 resume 무시 (메뉴 감지 플리커 방지)
+        """
+        if self._paused:
+            # debounce: 너무 빠른 resume 방지
+            elapsed = time.time() - self._pause_time
+            if elapsed < 0.3:
+                log.trace(f"resume 무시 (debounce: {elapsed:.2f}s < 0.3s)")
+                return
+            self._paused = False
+            log.debug("MessageListMonitor 재개")
+
+    @property
+    def is_paused(self) -> bool:
+        """일시 중지 상태인지 확인"""
+        return self._paused
 
     def _start_event_thread(self) -> None:
         """이벤트 처리 전용 스레드 시작
@@ -541,7 +580,7 @@ class MessageListMonitor:
         Args:
             change_type: 변경 유형 (0=ChildAdded, 2=ChildrenInvalidated, etc.)
         """
-        if not self._running:
+        if not self._running or self._paused:
             return
 
         try:
@@ -553,10 +592,12 @@ class MessageListMonitor:
                     new_count = current_count - self._last_count
                     self._last_count = current_count
 
+                    # children을 이벤트에 포함 (GetChildren 이중 호출 방지)
                     event = MessageEvent(
                         new_count=new_count,
                         timestamp=time.time(),
-                        source="event"
+                        source="event",
+                        children=children  # 이미 가져온 children 전달
                     )
 
                     log.debug(f"StructureChanged 이벤트: type={change_type}, new={new_count}")
@@ -622,5 +663,6 @@ class MessageListMonitor:
         """모니터 통계"""
         return {
             "running": self._running,
+            "paused": self._paused,
             "last_count": self._last_count,
         }
