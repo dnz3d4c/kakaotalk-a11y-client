@@ -24,26 +24,42 @@ def _get_project_root() -> Path:
     return Path(__file__).parent.parent.parent.parent
 
 
-# DEBUG 환경변수 체크
-_debug_mode = os.environ.get("DEBUG", "0") in ("1", "2")
-
-# 프로파일 로거 설정
+# 프로파일 로거 설정 (초기화 지연)
 profile_logger = logging.getLogger('uia_profiler')
-
-# DEBUG 모드에서만 파일 핸들러 추가
+_debug_mode = False
 log_dir: Optional[Path] = None
-if _debug_mode:
-    profile_logger.setLevel(logging.DEBUG)
-    log_dir = _get_project_root() / "logs"
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / f'profile_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s | %(message)s'))
-    profile_logger.addHandler(file_handler)
-else:
-    # 프로파일러 비활성화: NullHandler로 로그 무시
-    profile_logger.setLevel(logging.CRITICAL + 1)
-    profile_logger.addHandler(logging.NullHandler())
+_profiler_initialized = False
+
+
+def init_profiler(enabled: bool = None) -> None:
+    """프로파일러 초기화 (main에서 호출)
+
+    Args:
+        enabled: True면 로그 활성화, None이면 환경변수 체크 (하위 호환)
+    """
+    global _debug_mode, log_dir, _profiler_initialized
+
+    if _profiler_initialized:
+        return
+    _profiler_initialized = True
+
+    # enabled가 None이면 환경변수 체크 (하위 호환)
+    if enabled is None:
+        enabled = os.environ.get("DEBUG", "0") in ("1", "2")
+
+    _debug_mode = enabled
+
+    if _debug_mode:
+        profile_logger.setLevel(logging.DEBUG)
+        log_dir = _get_project_root() / "logs"
+        log_dir.mkdir(exist_ok=True)
+        log_file = log_dir / f'profile_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter('%(asctime)s | %(message)s'))
+        profile_logger.addHandler(file_handler)
+    else:
+        profile_logger.setLevel(logging.CRITICAL + 1)
+        profile_logger.addHandler(logging.NullHandler())
 
 
 @dataclass

@@ -27,6 +27,9 @@ DEFAULT_SETTINGS = {
         "scan_count": 0,
         "message_count": 0,
     },
+    "update": {
+        "last_check_timestamp": 0,
+    },
 }
 
 # 핫키 이름 매핑 (UI 표시용)
@@ -134,6 +137,14 @@ class Settings:
         """통계 증가"""
         current = self.get(f"stats.{name}", 0)
         self.set(f"stats.{name}", current + 1)
+
+    def get_last_update_check(self) -> float:
+        """마지막 업데이트 체크 시간(timestamp) 반환"""
+        return self.get("update.last_check_timestamp", 0)
+
+    def set_last_update_check(self, timestamp: float) -> None:
+        """마지막 업데이트 체크 시간 저장"""
+        self.set("update.last_check_timestamp", timestamp)
 
     @property
     def data(self) -> dict:

@@ -119,10 +119,10 @@ class MessageMonitor:
             return False
 
         try:
-            # 메시지 목록 찾기
+            # 메시지 목록 찾기 (searchDepth 4로 축소하여 탐색 비용 절감)
             msg_list = self.chat_navigator.chat_control.ListControl(
                 Name="메시지",
-                searchDepth=5
+                searchDepth=4
             )
 
             if not msg_list.Exists(maxSearchSeconds=0.5):
@@ -143,7 +143,7 @@ class MessageMonitor:
         """MessageListMonitor 콜백: 새 메시지 감지됨
 
         Args:
-            event: 메시지 이벤트 (new_count, timestamp, source)
+            event: 메시지 이벤트 (new_count, timestamp, source, children)
         """
         log.debug(f"메시지 이벤트: new_count={event.new_count}, source={event.source}")
 
@@ -151,17 +151,18 @@ class MessageMonitor:
             log.trace("채팅방 비활성, 이벤트 무시")
             return
 
-        # 새 메시지 로드
-        new_messages = self._load_new_messages(event.new_count)
+        # 새 메시지 로드 (event.children 활용으로 GetChildren 이중 호출 방지)
+        new_messages = self._load_new_messages(event.new_count, event.children)
         if new_messages:
             log.debug(f"새 메시지 {len(new_messages)}개 로드됨")
             self._announce_new_messages(new_messages)
 
-    def _load_new_messages(self, count: int) -> list:
+    def _load_new_messages(self, count: int, children: list = None) -> list:
         """새 메시지 로드
 
         Args:
             count: 새 메시지 개수
+            children: 이벤트에서 전달받은 children (GetChildren 이중 호출 방지)
 
         Returns:
             새 메시지 리스트
@@ -170,9 +171,17 @@ class MessageMonitor:
             return []
 
         try:
+            # children이 전달되면 직접 사용 (GetChildren 이중 호출 방지)
+            if children:
+                # children에서 마지막 count개 반환
+                if count > 0:
+                    return children[-count:]
+                return []
+
+            # children이 없으면 기존 방식 (폴백)
             msg_list = self.chat_navigator.chat_control.ListControl(
                 Name="메시지",
-                searchDepth=5
+                searchDepth=4
             )
 
             if not msg_list.Exists(maxSearchSeconds=0.3):

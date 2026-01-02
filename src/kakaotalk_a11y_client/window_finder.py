@@ -240,6 +240,53 @@ def is_kakaotalk_window(hwnd: int) -> bool:
         return False
 
 
+def is_kakaotalk_menu_window(hwnd: int) -> bool:
+    """카카오톡 팝업메뉴 창인지 확인.
+
+    Args:
+        hwnd: 창 핸들
+
+    Returns:
+        팝업메뉴 창이면 True
+    """
+    try:
+        class_name = win32gui.GetClassName(hwnd)
+        return class_name == 'EVA_Menu'
+    except Exception:
+        return False
+
+
+def find_kakaotalk_menu_window() -> Optional[int]:
+    """현재 열려있는 카카오톡 팝업메뉴 창 찾기.
+
+    GetForegroundWindow()와 달리, visible한 모든 창 중에서 찾음.
+    팝업메뉴는 오버레이로 표시되어 포그라운드가 아닐 수 있음.
+
+    Returns:
+        팝업메뉴 창 핸들 또는 None
+    """
+    result = None
+
+    def enum_callback(hwnd, _):
+        nonlocal result
+        if win32gui.IsWindowVisible(hwnd):
+            try:
+                class_name = win32gui.GetClassName(hwnd)
+                if class_name == 'EVA_Menu':
+                    result = hwnd
+                    return False  # 찾으면 중단
+            except Exception:
+                pass
+        return True
+
+    try:
+        win32gui.EnumWindows(enum_callback, None)
+    except Exception:
+        pass
+
+    return result
+
+
 def _enumerate_kakaotalk_windows() -> list[KakaoWindow]:
     """모든 카카오톡 창을 열거한다.
 
