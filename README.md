@@ -20,6 +20,13 @@ PC 카카오톡을 공식 지원하는 스크린 리더처럼
 ### 개인정보 보호
 - 100% 본인 PC에서 실행되며 외부로 정보를 전송하지 않아요. 공감 이모지는 샘플 데이터를 사용해 처리됩니다.
 
+## 시작하기
+
+1. [릴리즈 페이지](https://github.com/dnz3d4c/kakaotalk-a11y-client/releases)에서 최신 버전 다운로드
+2. 압축 풀고 `KakaotalkA11y.exe` 실행
+
+자세한 설치/사용법은 [사용자 가이드](docs/USER_GUIDE.md)를 참조하세요.
+
 ## 희망사항
 카카오톡 팀에서 접근성을 개선해 주셔서 이 프로젝트가 더이상 사용되지 않길 바라봅니다. 저에게 이미 이런 프로젝트가 있어요. <https://github.com/dnz3d4c/potplayerNVDAAddon>
 
