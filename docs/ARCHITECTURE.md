@@ -56,14 +56,11 @@ src/kakaotalk_a11y_client/
 ├── clicker.py              # 마우스 클릭
 ├── config.py               # 설정값
 ├── settings.py             # 설정 저장/로드 (JSON 기반)
-├── gui/                    # wxPython GUI (시스템 트레이)
+├── ipc/                    # IPC 서버 (Tauri GUI와 통신)
 │   ├── __init__.py         # 패키지 초기화
-│   ├── app.py              # KakaoA11yApp (wx.App)
-│   ├── main_frame.py       # 숨겨진 메인 프레임
-│   ├── tray_icon.py        # 시스템 트레이 아이콘
-│   ├── settings_dialog.py  # 설정 다이얼로그 (탭 기반)
-│   ├── status_panel.py     # 상태 표시 패널
-│   └── hotkey_panel.py     # 핫키 설정 패널
+│   ├── server.py           # Named Pipe 서버
+│   ├── protocol.py         # JSON-RPC 2.0 프로토콜
+│   └── handlers.py         # 메서드 핸들러 (상태/설정/업데이트)
 ├── navigation/
 │   ├── chat_room.py        # 채팅방 메시지 탐색
 │   └── message_monitor.py  # 새 메시지 자동 읽기
@@ -308,7 +305,7 @@ NVDA의 네이티브 동작과 함께 작동합니다.
 
 | 스레드 | 역할 | 폴링 간격 |
 |--------|------|----------|
-| Main | wx.App.MainLoop (GUI) 또는 wait_for_exit (콘솔) | - |
+| Main | asyncio 이벤트 루프 (IPC) 또는 wait_for_exit (콘솔) | - |
 | HotkeyManager | Windows 메시지 루프 | 블로킹 |
 | FocusMonitor | 포커스 모니터링 | 250~300ms (적응형) |
 | MessageListMonitor | StructureChanged 이벤트 | 이벤트 기반 |
@@ -318,7 +315,7 @@ NVDA의 네이티브 동작과 함께 작동합니다.
 
 | 모드 | 메인 루프 | 시작 옵션 |
 |------|----------|----------|
-| GUI (기본) | wx.App.MainLoop() | `uv run kakaotalk-a11y` |
+| IPC (기본) | asyncio (Named Pipe 서버) | `uv run kakaotalk-a11y` |
 | 콘솔 | wait_for_exit() | `uv run kakaotalk-a11y --console` |
 
 ### 스레드 생명주기
@@ -378,7 +375,6 @@ def uia_operation():
 | pyautogui | 화면 캡처, 마우스 클릭 |
 | opencv-python-headless | 이모지 템플릿 매칭 |
 | accessible_output2 | 스크린 리더 연동 |
-| wxPython | 시스템 트레이 GUI |
 
 ### 스크린 리더 연동
 

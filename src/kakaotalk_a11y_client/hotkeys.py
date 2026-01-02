@@ -9,6 +9,7 @@ keyboard 라이브러리 대신 Windows RegisterHotKey API를 직접 사용.
 import ctypes
 from ctypes import wintypes
 import os
+import queue
 import signal
 import threading
 from typing import Callable, Optional
@@ -19,6 +20,9 @@ from .utils.debug import get_logger
 
 user32 = ctypes.windll.user32
 log = get_logger("Hotkeys")
+
+# 핫키 재등록 요청 큐
+_reregister_queue: queue.Queue = queue.Queue()
 
 # 핫키 ID 상수
 HOTKEY_ID_SCAN = 1
@@ -150,6 +154,21 @@ class HotkeyManager:
         )
         self._selection_mode_active = False
 
+    def update_hotkey(self, config_key: str) -> None:
+        """핫키 동적 재등록 요청 (스레드 안전)"""
+        if not self._thread_id:
+            log.warning(f"핫키 스레드 없음, 재등록 불가: {config_key}")
+            return
+
+        _reregister_queue.put(config_key)
+        ctypes.windll.user32.PostThreadMessageW(
+            self._thread_id,
+            win32con.WM_USER + 3,  # 재등록 메시지
+            0,
+            0,
+        )
+        log.debug(f"핫키 재등록 요청: {config_key}")
+
     def start(self) -> None:
         """메시지 루프 시작 (별도 스레드)"""
         self._running = True
@@ -204,6 +223,9 @@ class HotkeyManager:
             elif msg.message == win32con.WM_USER + 2:
                 self._unregister_selection_hotkeys()
 
+            elif msg.message == win32con.WM_USER + 3:
+                self._process_reregister_queue()
+
             elif msg.message == win32con.WM_USER + 10:
                 self._unregister_all_hotkeys()
                 self._cleanup_event.set()
@@ -226,6 +248,47 @@ class HotkeyManager:
         user32.UnregisterHotKey(None, HOTKEY_ID_NUM2)
         user32.UnregisterHotKey(None, HOTKEY_ID_NUM3)
         user32.UnregisterHotKey(None, HOTKEY_ID_NUM4)
+
+    def _process_reregister_queue(self) -> None:
+        """큐에서 핫키 재등록 요청 처리"""
+        from .settings import get_settings
+
+        # config_key -> hotkey_id 역매핑
+        config_to_id = {v: k for k, v in HOTKEY_CONFIG_MAP.items()}
+        settings = get_settings()
+
+        while not _reregister_queue.empty():
+            try:
+                config_key = _reregister_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            hotkey_id = config_to_id.get(config_key)
+            if hotkey_id is None:
+                log.warning(f"알 수 없는 핫키 설정: {config_key}")
+                continue
+
+            # 기존 핫키 해제
+            user32.UnregisterHotKey(None, hotkey_id)
+
+            # 새 설정으로 재등록
+            hotkey_config = settings.get_hotkey(config_key)
+            if not hotkey_config:
+                log.warning(f"핫키 설정 없음: {config_key}")
+                continue
+
+            modifiers = _get_modifiers(hotkey_config.get("modifiers", []))
+            vk = _get_vk(hotkey_config.get("key", ""))
+            if not vk:
+                log.warning(f"잘못된 핫키 키: {config_key}")
+                continue
+
+            result = user32.RegisterHotKey(None, hotkey_id, modifiers, vk)
+            if result:
+                log.info(f"핫키 재등록 성공: {config_key} (mod={modifiers}, vk={vk})")
+            else:
+                error_code = ctypes.GetLastError()
+                log.error(f"핫키 재등록 실패: {config_key}, 오류 코드: {error_code}")
 
     def _unregister_all_hotkeys(self) -> None:
         """모든 핫키 일괄 해제"""

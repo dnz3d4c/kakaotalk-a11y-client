@@ -4,6 +4,17 @@
 
 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [0.3.0] - 2026-01-03
+
+### Changed
+- **GUI 아키텍처 전환**: wxPython GUI 제거, Tauri GUI + IPC 서버 구조로 변경
+- 기본 실행 모드가 IPC 서버로 변경 (Tauri GUI와 통신)
+- `--console` 옵션으로 콘솔 모드 실행 가능
+
+### Removed
+- wxPython 의존성 제거 (패키지 용량 감소)
+- 내장 GUI 코드 제거 (gui/ 디렉토리)
+
 ## [0.2.3] - 2026-01-03
 
 ### Changed

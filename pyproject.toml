@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kakaotalk-a11y-client"
-version = "0.2.2"
+version = "0.3.0"
 description = "카카오톡 접근성 클라이언트 (시각장애인용)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -20,7 +20,6 @@ dependencies = [
     "pywin32>=306",
     "accessible-output2>=0.17",
     "uiautomation>=2.0.29",
-    "wxPython>=4.2.0",
 ]
 
 [project.optional-dependencies]

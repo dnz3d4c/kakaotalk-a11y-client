@@ -387,11 +387,11 @@ class EmojiClicker:
         # interrupt=True: 빠른 탐색 시 이전 발화 중단하고 최신 항목만 읽기
         speak(clean_name, interrupt=True)
 
-    def run(self, use_gui: bool = True) -> None:
+    def run(self, use_ipc: bool = True) -> None:
         """메인 루프 실행
 
         Args:
-            use_gui: GUI 모드 사용 여부 (기본값: True)
+            use_ipc: IPC 서버 모드 사용 여부 (기본값: True, False면 콘솔 모드)
         """
         log_path = get_log_file_path()
         if log_path:
@@ -414,8 +414,8 @@ class EmojiClicker:
         self.hotkey_manager.start()
         self._start_focus_monitor()
 
-        if use_gui:
-            self._run_gui_mode()
+        if use_ipc:
+            self._run_ipc_mode()
         else:
             self._run_console_mode()
 
@@ -428,13 +428,30 @@ class EmojiClicker:
         finally:
             self.cleanup()
 
-    def _run_gui_mode(self) -> None:
-        """GUI 모드 (wxPython 트레이 앱)"""
-        from .gui.app import KakaoA11yApp
+    def _run_ipc_mode(self) -> None:
+        """IPC 서버 모드 (Tauri GUI와 통신)"""
+        import asyncio
+        from .ipc import IPCServer, create_handlers
 
-        app = KakaoA11yApp(self)
-        app.MainLoop()
-        # cleanup은 MainFrame.on_close에서 호출됨
+        log.info("IPC 서버 모드 시작")
+
+        handlers = create_handlers()
+        server = IPCServer(handlers)
+
+        async def run_server():
+            try:
+                await server.start(self)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                server.stop()
+
+        try:
+            asyncio.run(run_server())
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.cleanup()
 
     def cleanup(self) -> None:
         """정리 - 모든 리소스 해제"""
@@ -523,7 +540,7 @@ def parse_args():
     parser.add_argument(
         '--console',
         action='store_true',
-        help='콘솔 모드 실행 (--debug 필요, GUI 없이)'
+        help='콘솔 모드 실행 (기본은 IPC 서버 모드)'
     )
 
     return parser.parse_args()
@@ -623,9 +640,9 @@ def main() -> int:
     if not _clicker_instance.initialize():
         return 1
 
-    # GUI 모드가 기본 (--console은 디버그 모드에서만 유효)
-    use_console = args.console and args.debug
-    _clicker_instance.run(use_gui=not use_console)
+    # 모드 결정: 기본 IPC, --console 시 콘솔 모드
+    use_console = args.console
+    _clicker_instance.run(use_ipc=not use_console)
     return 0
 
 
