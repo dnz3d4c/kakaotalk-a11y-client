@@ -46,6 +46,41 @@ class MainFrame(wx.Frame):
         self._settings_dialog.Destroy()
         self._settings_dialog = None
 
+    def check_for_update(self, manual: bool = False) -> None:
+        """업데이트 확인.
+
+        Args:
+            manual: 수동 확인 여부 (트레이 메뉴에서 호출 시 True)
+        """
+        from ..updater import check_for_update, is_frozen
+        from .update_dialogs import run_update_flow, show_update_available
+
+        # 개발 환경에서는 동작 안함
+        if not is_frozen():
+            if manual:
+                wx.MessageBox(
+                    "개발 환경에서는 업데이트를 사용할 수 없습니다.",
+                    "알림",
+                    wx.OK | wx.ICON_INFORMATION,
+                    self,
+                )
+            return
+
+        info = check_for_update()
+        if not info:
+            if manual:
+                wx.MessageBox(
+                    "현재 최신 버전을 사용 중입니다.",
+                    "업데이트 확인",
+                    wx.OK | wx.ICON_INFORMATION,
+                    self,
+                )
+            return
+
+        # 업데이트 알림
+        if show_update_available(self, info):
+            run_update_flow(self, info)
+
     def on_close(self, event: wx.CloseEvent) -> None:
         """창 닫기 처리"""
         if event.CanVeto():

@@ -15,6 +15,7 @@ class TrayIcon(wx.adv.TaskBarIcon):
     """시스템 트레이 아이콘 - NVDA 호환 네이티브 메뉴"""
 
     ID_SETTINGS = wx.NewIdRef()
+    ID_CHECK_UPDATE = wx.NewIdRef()
     ID_EXIT = wx.NewIdRef()
 
     def __init__(self, frame: "MainFrame", clicker: "EmojiClicker"):
@@ -40,6 +41,10 @@ class TrayIcon(wx.adv.TaskBarIcon):
         menu.Append(self.ID_SETTINGS, "설정(&S)...")
         self.Bind(wx.EVT_MENU, self.on_settings, id=self.ID_SETTINGS)
 
+        # 업데이트 확인
+        menu.Append(self.ID_CHECK_UPDATE, "업데이트 확인(&U)...")
+        self.Bind(wx.EVT_MENU, self.on_check_update, id=self.ID_CHECK_UPDATE)
+
         menu.AppendSeparator()
 
         # 종료
@@ -55,6 +60,10 @@ class TrayIcon(wx.adv.TaskBarIcon):
     def on_settings(self, event: wx.CommandEvent) -> None:
         """설정 메뉴"""
         self.frame.show_settings_dialog()
+
+    def on_check_update(self, event: wx.CommandEvent) -> None:
+        """업데이트 확인"""
+        self.frame.check_for_update(manual=True)
 
     def on_exit(self, event: wx.CommandEvent) -> None:
         """프로그램 종료"""
