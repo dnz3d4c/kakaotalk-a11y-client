@@ -149,7 +149,7 @@ wheels = [
 
 [[package]]
 name = "kakaotalk-a11y-client"
-version = "0.2.0b0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "accessible-output2" },

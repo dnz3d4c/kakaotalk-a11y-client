@@ -11,7 +11,7 @@ license = { text = "MIT" }
 authors = [
     { name = "dnz3d4c" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = [
     "opencv-python>=4.8.0",
     "numpy>=1.24.0",
