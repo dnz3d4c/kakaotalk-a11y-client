@@ -80,9 +80,33 @@ class MessageMonitor:
 
         log.info("MessageMonitor 중지 완료")
 
+    def pause(self):
+        """이벤트 처리 일시 중지 (핸들러 유지, COM 재등록 없음)
+
+        팝업메뉴 열릴 때 호출. stop/start 대신 사용하여 CPU 스파이크 방지.
+        """
+        if self._list_monitor:
+            self._list_monitor.pause()
+            log.debug("MessageMonitor 일시 중지")
+
+    def resume(self):
+        """이벤트 처리 재개
+
+        팝업메뉴 닫힐 때 호출.
+        """
+        if self._list_monitor:
+            self._list_monitor.resume()
+            log.debug("MessageMonitor 재개")
+
     def is_running(self) -> bool:
         """실행 중인지 확인"""
         return self._running
+
+    def is_paused(self) -> bool:
+        """일시 중지 상태인지 확인"""
+        if self._list_monitor:
+            return self._list_monitor.is_paused
+        return False
 
     def _start_event_mode(self) -> bool:
         """이벤트 모드 시작 (MessageListMonitor 사용)

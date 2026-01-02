@@ -54,16 +54,19 @@ with open(target, 'w', encoding='utf-8') as f:
 
 ## 캐시 삭제 (기능 변경/추가 후 필수)
 
-코드 수정 후 테스트 전 **반드시** 파이썬 캐시 삭제 (프로젝트 폴더 한정):
+코드 수정 후 테스트 전 **반드시** 파이썬 캐시 삭제.
+
+**정책:**
+- 프로젝트 폴더(`C:\project\kakaotalk-a11y-client`) 한정 → 권한 문제 없음
+- 프로그램 실행 중이면 자동 종료 후 삭제
 
 ```powershell
-# PowerShell (프로젝트 루트에서 실행)
-Get-ChildItem -Path "C:\project\kakaotalk-a11y-client" -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
-Get-ChildItem -Path "C:\project\kakaotalk-a11y-client" -Recurse -Filter "*.pyc" | Remove-Item -Force
+# PowerShell - Python 종료 + 캐시 삭제 (권장)
+powershell.exe -Command "Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-ChildItem -Path 'C:\project\kakaotalk-a11y-client' -Recurse -Directory -Filter '__pycache__' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
 ```
 
 ```bash
-# Bash/Git Bash (프로젝트 루트에서 실행)
+# Bash/Git Bash
 find /c/project/kakaotalk-a11y-client -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 find /c/project/kakaotalk-a11y-client -type f -name "*.pyc" -delete 2>/dev/null
 ```
@@ -92,6 +95,9 @@ $env:DEBUG=2; uv run kakaotalk-a11y  # TRACE 레벨
 
 # 디버그 로그 확인
 Get-Content C:\project\kakaotalk-a11y-client\logs\debug.log -Tail 50
+
+# UTF-8 로그 확인 (한글 깨짐 방지)
+powershell.exe -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content 'C:\project\kakaotalk-a11y-client\logs\debug.log' -Encoding UTF8 -Tail 50"
 
 # 프로파일 로그 확인
 Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
@@ -138,7 +144,9 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 3. **동기화**: 변경 파일을 release에 복사 후 커밋 (제외 파일 제외)
 
 ### release 제외 파일
+- `samples/` - 민감정보 포함 개발용 샘플
 - `docs/PROJECT_ANALYSIS.md` - 로컬 개발 전용 분석 문서
+- `docs/DOCUMENT_STYLE_GUIDE.md` - 문체 가이드 (main에서만 관리)
 
 ### 실수 방지
 - `kakaotalk-a11y-client`는 GitHub push 금지
@@ -177,7 +185,8 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 
 ### 요약
 - 커밋 형식: `<타입>: <설명>`
-- 타입: feat, fix, refactor, docs, chore
+- 타입: feat, fix, improve, refactor, docs, chore
+- improve: 근본 원인 분석 후 최선책 적용 (fix와 구분)
 - 하나의 논리적 변경 = 하나의 커밋
 - 코드 변경 시 관련 문서도 업데이트
 
