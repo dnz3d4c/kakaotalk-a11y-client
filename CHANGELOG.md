@@ -4,6 +4,11 @@
 
 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [0.3.1] - 2026-01-03
+
+### Fixed
+- 사용자 가이드 업데이트 (wxPython GUI 제거 반영)
+
 ## [0.3.0] - 2026-01-03
 
 ### Changed

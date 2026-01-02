@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kakaotalk-a11y-client"
-version = "0.3.0"
+version = "0.3.1"
 description = "카카오톡 접근성 클라이언트 (시각장애인용)"
 readme = "README.md"
 license = { text = "MIT" }
