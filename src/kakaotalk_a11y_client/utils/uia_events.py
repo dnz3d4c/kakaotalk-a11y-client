@@ -29,16 +29,45 @@ try:
         GetModule("UIAutomationCore.dll")
         from comtypes.gen.UIAutomationClient import (
             CUIAutomation,
+            IUIAutomation6,
             IUIAutomationFocusChangedEventHandler,
             IUIAutomationStructureChangedEventHandler,
             TreeScope_Subtree,
+            CoalesceEventsOptions_Enabled,
         )
+        # CUIAutomation8 시도 (IUIAutomation6 지원)
+        try:
+            from comtypes.gen.UIAutomationClient import CUIAutomation8
+            HAS_UIA8 = True
+        except ImportError:
+            HAS_UIA8 = False
         HAS_COMTYPES = True
+        HAS_UIA6 = True
+    except ImportError:
+        # IUIAutomation6 없음 (Windows 10 1809 미만)
+        HAS_UIA8 = False
+        try:
+            from comtypes.gen.UIAutomationClient import (
+                CUIAutomation,
+                IUIAutomationFocusChangedEventHandler,
+                IUIAutomationStructureChangedEventHandler,
+                TreeScope_Subtree,
+            )
+            HAS_COMTYPES = True
+            HAS_UIA6 = False
+        except Exception:
+            HAS_COMTYPES = False
+            HAS_UIA6 = False
+            COMObject = object
     except Exception:
         HAS_COMTYPES = False
+        HAS_UIA6 = False
+        HAS_UIA8 = False
         COMObject = object  # 폴백
 except ImportError:
     HAS_COMTYPES = False
+    HAS_UIA6 = False
+    HAS_UIA8 = False
     COMError = Exception
     COMObject = object  # 폴백
 
@@ -47,6 +76,27 @@ from .profiler import profile_logger
 from ..accessibility import speak
 
 log = get_logger("UIA_Events")
+
+
+def _create_uia_client():
+    """UIA 클라이언트 생성 (IUIAutomation6 CoalesceEvents 활성화 시도)
+
+    Returns:
+        IUIAutomation6 또는 IUIAutomation 인스턴스
+    """
+    # CUIAutomation8 우선 시도 (IUIAutomation6 지원)
+    if HAS_UIA8:
+        try:
+            uia = CreateObject(CUIAutomation8)
+            uia6 = uia.QueryInterface(IUIAutomation6)
+            uia6.CoalesceEvents = CoalesceEventsOptions_Enabled
+            log.debug("IUIAutomation6 CoalesceEvents 활성화 (CUIAutomation8)")
+            return uia6
+        except Exception as e:
+            log.debug(f"CUIAutomation8 실패, CUIAutomation 시도: {e}")
+
+    # 폴백: 기본 CUIAutomation
+    return CreateObject(CUIAutomation)
 
 
 @dataclass
@@ -139,7 +189,7 @@ class HybridFocusMonitor:
 
         try:
             # UIA 클라이언트 생성
-            self._uia = CreateObject(CUIAutomation)
+            self._uia = _create_uia_client()
 
             # 이벤트 핸들러 생성 및 등록
             # 참고: comtypes로 이벤트 핸들러를 직접 구현하는 것은 복잡함
@@ -372,7 +422,14 @@ class MessageListMonitor:
     - 팝업메뉴 열림/닫힘 시 stop/start 대신 사용하여 CPU 스파이크 방지
 
     메뉴 읽기는 NVDA에 위임 (메뉴 모드에서 pause만 수행).
+
+    이벤트 디바운싱:
+    - 연속 메시지를 200ms 윈도우로 병합 (발화 끊김 방지)
+    - NVDA OrderedWinEventLimiter 패턴 적용
     """
+
+    # 이벤트 디바운싱 설정
+    EVENT_DEBOUNCE_INTERVAL = 0.2  # 200ms 윈도우
 
     def __init__(self, list_control: auto.Control):
         """
@@ -399,6 +456,11 @@ class MessageListMonitor:
         # 핸들러 해제/재등록 요청 플래그 (스레드 안전)
         self._pending_unregister = False
         self._pending_register = False
+
+        # 이벤트 디바운싱 (발화 끊김 방지)
+        self._debounce_timer: Optional[threading.Timer] = None
+        self._pending_event_count = 0  # 버퍼링된 이벤트 개수
+        self._debounce_generation = 0  # 타이머 세대 (레이스 컨디션 방지)
 
         log.trace(f"MessageListMonitor 초기화: comtypes={HAS_COMTYPES}")
 
@@ -434,6 +496,11 @@ class MessageListMonitor:
         """모니터링 중지"""
         self._running = False
         self._paused = False
+
+        # 디바운스 타이머 취소
+        if self._debounce_timer:
+            self._debounce_timer.cancel()
+            self._debounce_timer = None
 
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
@@ -554,7 +621,7 @@ class MessageListMonitor:
 
         try:
             # UIA 클라이언트 생성
-            self._uia = CreateObject(CUIAutomation)
+            self._uia = _create_uia_client()
 
             # 메시지 목록의 IUIAutomationElement 가져오기
             hwnd = self.list_control.NativeWindowHandle
@@ -613,10 +680,40 @@ class MessageListMonitor:
             self._root_element = None
 
     def _on_structure_changed(self, change_type: int) -> None:
-        """StructureChanged 이벤트 콜백
+        """StructureChanged 이벤트 콜백 (디바운싱 적용)
 
         Args:
             change_type: 변경 유형 (0=ChildAdded, 2=ChildrenInvalidated, etc.)
+        """
+        if not self._running or self._paused:
+            return
+
+        # 디바운싱: 이벤트 버퍼링 후 200ms 후에 일괄 처리
+        with self._lock:
+            self._pending_event_count += 1
+            self._debounce_generation += 1
+            current_gen = self._debounce_generation
+
+            # 기존 타이머 취소
+            if self._debounce_timer:
+                self._debounce_timer.cancel()
+
+            # 새 타이머 시작 (200ms 후 flush)
+            # generation으로 stale 타이머 무시 (레이스 컨디션 방지)
+            self._debounce_timer = threading.Timer(
+                self.EVENT_DEBOUNCE_INTERVAL,
+                lambda gen=current_gen: self._flush_pending_events(gen)
+            )
+            self._debounce_timer.daemon = True
+            self._debounce_timer.start()
+
+            log.trace(f"StructureChanged 버퍼링: type={change_type}, pending={self._pending_event_count}")
+
+    def _flush_pending_events(self, generation: int) -> None:
+        """버퍼링된 이벤트 일괄 처리 (디바운스 타이머 콜백)
+
+        Args:
+            generation: 타이머 세대 (stale 타이머 무시용)
         """
         if not self._running or self._paused:
             return
@@ -626,6 +723,15 @@ class MessageListMonitor:
             current_count = len(children) if children else 0
 
             with self._lock:
+                # stale 타이머 무시 (레이스 컨디션 방지)
+                if generation != self._debounce_generation:
+                    log.trace(f"stale 타이머 무시: gen={generation}, current={self._debounce_generation}")
+                    return
+
+                pending = self._pending_event_count
+                self._pending_event_count = 0
+                self._debounce_timer = None
+
                 if current_count > self._last_count:
                     new_count = current_count - self._last_count
                     self._last_count = current_count
@@ -638,7 +744,7 @@ class MessageListMonitor:
                         children=children  # 이미 가져온 children 전달
                     )
 
-                    log.debug(f"StructureChanged 이벤트: type={change_type}, new={new_count}")
+                    log.debug(f"StructureChanged 플러시: pending={pending}, new={new_count}")
 
                     if self._callback:
                         try:
@@ -650,7 +756,7 @@ class MessageListMonitor:
                     self._last_count = current_count
 
         except Exception as e:
-            log.trace(f"이벤트 처리 오류: {e}")
+            log.trace(f"이벤트 플러시 오류: {e}")
 
     def _on_focus_changed(self, sender) -> None:
         """FocusChanged 이벤트 콜백

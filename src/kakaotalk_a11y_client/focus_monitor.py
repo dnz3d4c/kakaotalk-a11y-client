@@ -115,6 +115,7 @@ class FocusMonitorService:
             start_time = time.time()
             max_warmup = 5.0  # 최대 대기 시간 (안전장치)
             last_cleanup = start_time  # 캐시 정리 시각
+            last_trace_state = (None, None, None)  # (hwnd, is_chat, nav_mode) - 중복 로깅 방지
 
             # UIA 비동기 초기화 (CPU 스파이크를 웜업 기간에 소화)
             uia_ready = threading.Event()
@@ -210,7 +211,10 @@ class FocusMonitorService:
 
                 # 3. 채팅방 창이면 자동으로 네비게이션 모드 진입
                 is_chat = is_kakaotalk_chat_window(fg_hwnd)
-                log.trace(f"포커스 모니터: hwnd={fg_hwnd}, is_chat={is_chat}, nav_mode={self._mode_manager.in_navigation_mode}")
+                current_trace_state = (fg_hwnd, is_chat, self._mode_manager.in_navigation_mode)
+                if current_trace_state != last_trace_state:
+                    log.trace(f"포커스 모니터: hwnd={fg_hwnd}, is_chat={is_chat}, nav_mode={self._mode_manager.in_navigation_mode}")
+                    last_trace_state = current_trace_state
                 if is_chat:
                     # 메뉴 모드일 때는 채팅방 진입 로직 스킵 (CPU 스파이크 방지)
                     if self._mode_manager.in_context_menu_mode:

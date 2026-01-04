@@ -88,6 +88,14 @@ with open(target, 'w', encoding='utf-8') as f:
 
 상세 릴리즈 가이드: [RELEASING.md](docs/RELEASING.md)
 
+### 릴리즈 요청 시 (필수)
+"릴리즈", "릴리즈해", "배포" 등 요청 시 **전체 플로우 연속 실행**:
+1. CHANGELOG.md [Unreleased]에 변경사항 추가
+2. `/new-version X.Y.Z` 실행
+3. `python scripts/sync_release.py --release` 실행 (빌드+push+GitHub Release)
+
+**중간에 멈추지 말고 끝까지 실행할 것.**
+
 ## 캐시 삭제 (기능 변경/추가 후 필수)
 
 코드 수정 후 테스트 전 **반드시** 파이썬 캐시 삭제.

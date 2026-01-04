@@ -222,9 +222,8 @@ class MessageMonitor:
                 log.trace(f"시스템 메시지 필터링: {name[:30]}...")
                 continue
 
-            # 첫 번째 메시지는 interrupt=True, 나머지는 False
-            interrupt = (i == 0)
-            speak(name, interrupt=interrupt)
+            # 새 메시지는 interrupt=False (TTS 큐에 누적, 발화 끊김 방지)
+            speak(name, interrupt=False)
             announced_count += 1
 
             # 메시지 내용 로깅 (30자 제한)

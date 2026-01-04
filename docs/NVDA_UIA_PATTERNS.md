@@ -402,7 +402,7 @@ MAX_WINEVENTS_PER_THREAD = 10  # 스레드당 일반 이벤트 최대
 
 ### 프로젝트 적용
 
-- 이벤트 병합: 미적용 → MessageListMonitor에 도입 권장
+- 이벤트 병합: ✅ 적용 (MessageListMonitor 200ms 디바운싱)
 - 음성 취소: 미적용 → 빠른 포커스 전환 시 유용
 
 ---
@@ -453,15 +453,15 @@ def compare_elements(elem1, elem2) -> bool:
 | CacheRequest | 11+ 속성 | 4개 필수 | ✅ 더 효율적 |
 | 이벤트 핸들링 | 전역+로컬 | 폴링 중심 | ⚠️ 부분 |
 | Workaround | 이슈 번호 | KAKAO-00X | ✅ 적용 |
-| compareElements | ✅ 사용 | ❌ Python == | ❌ 미적용 |
-| 이벤트 병합 | OrderedWinEventLimiter | ❌ 없음 | ❌ 미적용 |
+| compareElements | ✅ 사용 | ControlsAreSame | ✅ 적용 |
+| 이벤트 병합 | OrderedWinEventLimiter | 200ms 디바운싱 | ✅ 적용 |
 | TreeWalker | ✅ 사용 | searchDepth | ⚠️ 부분 |
 | MTA 아키텍처 | ✅ 단일 MTA | STA 다중 | ⚠️ 차이 |
 
 ### 개선 우선순위
 
-1. **즉시**: compareElements 도입, COM 초기화 일관성
-2. **중기**: FocusChanged 이벤트, 이벤트 병합
+1. **즉시**: ~~compareElements 도입~~, ~~COM 초기화 일관성~~ → ✅ 완료
+2. **중기**: FocusChanged 이벤트, ~~이벤트 병합~~ → 이벤트 병합 ✅ 완료
 3. **장기**: MTA 전환, TreeWalker 도입
 
 ---

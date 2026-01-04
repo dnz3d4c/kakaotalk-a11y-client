@@ -570,6 +570,20 @@ class FocusLossCancellableSpeechCommand:
 
 ## 4. 프로젝트 적용 제안
 
+### 적용 현황 (2026-01-04)
+
+| 우선순위 | 항목 | 상태 | 비고 |
+|---------|------|------|------|
+| 즉시 | A. compareElements | ✅ 적용 | commit 3d69aaf |
+| 즉시 | B. COM 초기화 일관성 | ✅ 적용 | chat_room.py CoUninitialize 추가 |
+| 즉시 | C. CacheRequest 확대 | ✅ 적용 | commit 3494656 |
+| 중기 | A. FocusChanged 이벤트 | ⏸️ 보류 | 전역 이벤트 CPU 부담, 현재 폴링 충분 |
+| 중기 | B. 하이브리드 모드 | ⏸️ 보류 | A 의존 |
+| 중기 | C. 이벤트 병합 | ✅ 적용 | commit 8ad3f1c, 200ms 디바운싱 |
+| 장기 | A. MTA 아키텍처 | ❌ 미적용 | 대규모 리팩토링 필요 |
+| 장기 | B. TreeWalker | ❌ 미적용 | searchDepth로 충분 |
+| 장기 | C. IUIAutomation6 | ✅ 적용 | commit 553ab28, CUIAutomation8 사용 |
+
 ### 4.1 즉시 적용 가능
 
 #### A. compareElements 도입
@@ -830,14 +844,14 @@ def _negotiate_interface(self):
 
 ## 5. 성능 지표 비교
 
-| 항목 | NVDA | kakaotalk (현재) | kakaotalk (개선 후) |
-|------|------|-----------------|-------------------|
-| 아파트먼트 | MTA 1개 | STA 다중 | MTA 검토 |
-| 포커스 조회 | 3-5회 COM | 1회 (BuildCache) | 유지 |
-| 포커스 비교 | compareElements | Python == | compareElements |
-| 이벤트 | 전역+로컬 분리 | 폴링 중심 | 하이브리드 |
-| 이벤트 병합 | OrderedWinEventLimiter | 없음 | 도입 |
-| COM 호출 감소 | ~30-40% | 60-65% | 70%+ |
+| 항목 | NVDA | kakaotalk (현재) | 상태 |
+|------|------|-----------------|------|
+| 아파트먼트 | MTA 1개 | STA 다중 | 유지 (리팩토링 비용 대비 효과 낮음) |
+| 포커스 조회 | 3-5회 COM | 1회 (BuildCache) | ✅ CacheRequest 적용 |
+| 포커스 비교 | compareElements | compareElements | ✅ 적용 완료 |
+| 이벤트 | 전역+로컬 분리 | 폴링 중심 | 폴링 유지 (CPU 부담 적음) |
+| 이벤트 병합 | OrderedWinEventLimiter | 200ms 디바운싱 | ✅ 적용 |
+| COM 호출 감소 | ~30-40% | 60-65% | ✅ 달성 |
 
 ---
 
