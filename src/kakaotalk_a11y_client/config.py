@@ -25,3 +25,32 @@ FAILSAFE = True  # 마우스를 화면 모서리로 이동 시 중단
 
 # 카카오톡 창 설정
 KAKAOTALK_WINDOW_TITLE = "카카오톡"
+
+# =============================================================================
+# 타이밍 설정 (초)
+# =============================================================================
+
+# 포커스 모니터 폴링 간격
+TIMING_MENU_MODE_POLL_INTERVAL = 0.15     # 메뉴 모드: 빠른 폴링
+TIMING_GRACE_POLL_INTERVAL = 0.15         # grace period 중 폴링
+TIMING_INACTIVE_POLL_INTERVAL = 0.5       # 비카카오톡 창: 느린 폴링
+TIMING_NORMAL_POLL_INTERVAL = 0.3         # 평상시 폴링
+
+# Grace period / Debounce
+TIMING_MENU_GRACE_PERIOD = 0.3            # 하위 메뉴 전환 시 잠깐 창 없어지는 현상 대응
+TIMING_RESUME_DEBOUNCE = 0.3              # pause 후 resume 무시 (메뉴 감지 플리커 방지)
+
+# 캐시 TTL
+TIMING_MENU_CACHE_TTL = 0.15              # 메뉴 창 감지 캐시 (EnumWindows 비용 절감)
+
+# =============================================================================
+# UIA 탐색 설정
+# =============================================================================
+
+# searchDepth 설정
+SEARCH_DEPTH_MESSAGE_LIST_CHECK = 3       # 메시지 목록 존재 확인용
+SEARCH_DEPTH_MESSAGE_LIST = 4             # 메시지 목록 탐색
+SEARCH_DEPTH_CHAT_LIST = 6                # 채팅 목록 탐색 (메인 창)
+
+# 필터링 설정
+FILTER_MAX_CONSECUTIVE_EMPTY = 15         # 연속 빈 항목 시 조기 종료 한계

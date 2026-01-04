@@ -29,6 +29,8 @@
 - [ ] `safe_uia_call()` 래핑
 - [ ] `searchDepth` 명시 (최대 6)
 - [ ] 반복 접근 시 캐시 사용
+- [ ] 처음 작업 시 [UIA_GUIDE.md](docs/UIA_GUIDE.md), [KAKAO_UIA_QUIRKS.md](docs/KAKAO_UIA_QUIRKS.md) 읽기
+- [ ] NVDA 패턴 적용 시 [nvda_uia_patterns.md](docs/nvda_uia_patterns.md) 참고
 
 ### 이벤트/콜백 추가 시
 - [ ] GUI 업데이트는 `wx.CallAfter()` 사용
@@ -78,48 +80,13 @@ with open(target, 'w', encoding='utf-8') as f:
 
 ## 버전 관리
 
-### 버전 정의 위치 (동기화 필수)
+버전 정의 위치:
 - `pyproject.toml`: `version = "X.Y.Z"`
 - `src/kakaotalk_a11y_client/__about__.py`: `__version__ = "X.Y.Z"`
 
-### 버전 업데이트 방법
-`/new-version X.Y.Z` 스킬 사용
+버전 업데이트: `/new-version X.Y.Z` 스킬 사용
 
-### 버전 결정 기준
-
-| 버전 | 조건 | 커밋 타입 |
-|------|------|----------|
-| PATCH (0.0.x) | 기존 기능 유지보수 | fix, improve, refactor, docs, chore |
-| MINOR (0.x.0) | 새 기능 추가 | feat 1개 이상 포함 |
-| MAJOR (x.0.0) | 호환성 깨짐 | 설정 형식 변경, API 변경 |
-
-### 릴리즈 트리거
-
-**자동 트리거** (하나라도 해당 시 릴리즈 고려):
-- feat 3개 이상 축적
-- fix 5개 이상 축적
-- 보안/안정성 중요 수정
-
-**수동 판단**:
-- 사용자에게 빨리 전달 필요
-- 중요 버그 수정
-
-### 커밋 후 릴리즈 확인 (Claude 규칙)
-
-feat/fix/improve 커밋 후:
-1. 마지막 버전 태그 이후 feat/fix 개수 확인
-2. 트리거 충족 시 → "릴리즈할까?" 제안
-3. 버전 자동 결정: feat 있으면 Minor, 없으면 Patch
-
-### 릴리즈 실행
-
-```bash
-# 전체 릴리즈 (빌드 + 동기화 + push + GitHub Release)
-python scripts/sync_release.py --release
-
-# 동기화만 (테스트용)
-python scripts/sync_release.py
-```
+상세 릴리즈 가이드: [RELEASING.md](docs/RELEASING.md)
 
 ## 캐시 삭제 (기능 변경/추가 후 필수)
 
@@ -199,30 +166,12 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 
 **주의**: `DEBUG=1 uv run ...` 형식은 Linux/bash 전용. Windows에서는 `$env:DEBUG=1;` 사용.
 
-## 저장소 분리 전략 (로컬 전용)
+## 저장소 분리 전략
 
-### 폴더 구조
-| 경로 | 용도 | Git 상태 |
-|------|------|----------|
-| `C:\project\kakaotalk-a11y-client` | 로컬 개발 (이력 보존) | main, push 금지 |
-| `C:\project\kakaotalk-a11y-release` | GitHub 배포용 | main, push 허용 |
+- `kakaotalk-a11y-client`: 로컬 개발용 (push 금지)
+- `kakaotalk-a11y-release`: GitHub 배포용
 
-### 작업 흐름
-1. **개발**: client에서 작업 + 커밋
-2. **릴리즈**: `python scripts/sync_release.py --release`
-   - PyInstaller 빌드
-   - release 저장소 동기화
-   - 커밋/태그/push
-   - GitHub Release 생성
-
-### release 제외 파일
-- `samples/` - 민감정보 포함 개발용 샘플
-- `docs/PROJECT_ANALYSIS.md` - 로컬 개발 전용 분석 문서
-- `docs/DOCUMENT_STYLE_GUIDE.md` - 문체 가이드 (main에서만 관리)
-
-### 실수 방지
-- `kakaotalk-a11y-client`는 GitHub push 금지
-- 이 폴더에 원격 저장소 추가 금지
+상세: [RELEASING.md](docs/RELEASING.md)
 
 ---
 
@@ -288,6 +237,13 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 ### 브랜치
 - 현재: main 직접 커밋
 - 필요시: feat/, fix/, refactor/ 브랜치 사용
+
+### 커밋 후 릴리즈 확인 (필수)
+feat/fix/improve 커밋 후:
+1. 마지막 버전 태그 이후 feat/fix 개수 확인
+2. 트리거 충족 시 → 사용자에게 "릴리즈할까?" 제안
+   - feat 3개 이상 또는 fix 5개 이상
+3. 미충족 시 → 현재 수치 간단 보고 (예: "feat 1/3, fix 2/5")
 
 ### 변경 이력 작성
 

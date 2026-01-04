@@ -9,6 +9,7 @@ UIA StructureChanged 이벤트 기반으로 동작.
 from typing import Optional, TYPE_CHECKING
 
 from ..accessibility import speak
+from ..config import SEARCH_DEPTH_MESSAGE_LIST
 from ..utils.debug import get_logger
 from ..utils.uia_utils import get_children_recursive
 from ..utils.uia_events import MessageListMonitor, MessageEvent
@@ -119,10 +120,10 @@ class MessageMonitor:
             return False
 
         try:
-            # 메시지 목록 찾기 (searchDepth 4로 축소하여 탐색 비용 절감)
+            # 메시지 목록 찾기
             msg_list = self.chat_navigator.chat_control.ListControl(
                 Name="메시지",
-                searchDepth=4
+                searchDepth=SEARCH_DEPTH_MESSAGE_LIST
             )
 
             if not msg_list.Exists(maxSearchSeconds=0.5):
@@ -181,7 +182,7 @@ class MessageMonitor:
             # children이 없으면 기존 방식 (폴백)
             msg_list = self.chat_navigator.chat_control.ListControl(
                 Name="메시지",
-                searchDepth=4
+                searchDepth=SEARCH_DEPTH_MESSAGE_LIST
             )
 
             if not msg_list.Exists(maxSearchSeconds=0.3):

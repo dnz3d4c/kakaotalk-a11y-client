@@ -5,7 +5,7 @@
 NVDA 패턴 적용:
 - COMError 핸들링 (safe_uia_call, handle_uia_errors)
 - UIA 신뢰도 판단 (is_good_uia_element, should_use_uia_for_window)
-- TTL 캐싱 (UIACache, message_list_cache, menu_cache)
+- TTL 캐싱 (UIACache, message_list_cache)
 - 이벤트 핸들링 (HybridFocusMonitor)
 - Workaround 시스템 (WORKAROUNDS)
 """
@@ -33,8 +33,6 @@ from .uia_cache import (
     UIACache,
     CacheEntry,
     message_list_cache,
-    menu_cache,
-    window_cache,
     clear_all_caches,
     log_all_cache_stats,
 )
@@ -90,8 +88,6 @@ __all__ = [
     "UIACache",
     "CacheEntry",
     "message_list_cache",
-    "menu_cache",
-    "window_cache",
     "clear_all_caches",
     "log_all_cache_stats",
     # uia_events

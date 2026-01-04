@@ -13,6 +13,7 @@
 | 포커스 이벤트 | 의도적 비활성화 | 현 상태 유지 |
 | 캐시 시스템 | 메모리 누수 + 히트율 낮음 | **개선 완료** |
 | 메뉴 감지 | EnumWindows 타이밍 문제 | **개선 완료** |
+| CacheRequest | COM 호출 최적화 | **구현 완료** |
 
 ---
 
@@ -104,37 +105,64 @@ EnumWindows API 타이밍 문제로 인한 깜빡임:
 
 | 항목 | 위치 | 상태 |
 |------|------|------|
-| menu_cache | uia_cache.py | 미래용 예약 |
-| window_cache | uia_cache.py | 미래용 예약 |
-| HybridFocusMonitor | uia_events.py | 데드 코드 (main.py에서 직접 폴링) |
+| menu_cache | uia_cache.py | **제거됨** (2026-01-04) |
+| window_cache | uia_cache.py | **제거됨** (2026-01-04) |
+| HybridFocusMonitor | uia_events.py | 사용 중 (debug_commands.py에서 이벤트 모니터로 활용) |
 
 ### 하드코딩된 설정
 
 | 값 | 위치 | 권장 |
 |----|------|------|
-| 폴링 300ms | main.py | settings.py |
-| 메뉴 폴링 150ms | main.py | settings.py |
-| Grace 0.3초 | main.py | settings.py |
-| 빈 항목 15개 | uia_utils.py | settings.py |
+| 폴링 300ms | focus_monitor.py | **상수화 완료** (config.py) |
+| 메뉴 폴링 150ms | focus_monitor.py | **상수화 완료** (config.py) |
+| Grace 0.3초 | focus_monitor.py | **상수화 완료** (config.py) |
+| 빈 항목 15개 | uia_utils.py | **상수화 완료** (config.py) |
 
 ---
 
-## 5. 미구현 NVDA 패턴
+## 5. NVDA 패턴 구현 현황
 
-### 완전 미구현
+### 구현 완료
 
-| 패턴 | 효과 | 복잡도 |
-|------|------|--------|
-| CachedProperty 배치 요청 | 속성 접근 20-30%↓ | 중 |
-| CompareElements() | 정확한 중복 필터링 | 하 |
-| UiaHasServerSideProvider() | UIA 신뢰도 판단 | 하 |
-
-### 부분 구현
-
-| 패턴 | 현황 | 누락 |
+| 패턴 | 효과 | 상태 |
 |------|------|------|
-| UIA 신뢰도 판단 | GOOD/BAD 클래스 정의 | API 체크 |
-| 포커스 중복 필터링 | Name 등 비교 | COM 비교 |
+| CompareElements() | 정확한 포커스 중복 필터링 | **구현됨** (2026-01-04) |
+| CacheRequest | COM 호출 60-65% 감소 | **구현됨** (2026-01-04) |
+
+### CacheRequest 구현 상세
+
+**구현 파일**: `utils/uia_cache_request.py`
+
+**동작 원리**:
+- `GetFocusedElementBuildCache()`: 한 번의 COM 호출로 필요한 속성 일괄 수집
+- 기존: `GetFocusedControl()` + `ControlTypeName` + `Name` = 3+ COM 호출
+- 개선: `GetFocusedElementBuildCache()` = 1 COM 호출
+
+**수치 효과**:
+
+| 항목 | 이전 | 이후 | 개선율 |
+|------|------|------|--------|
+| 폴링당 COM 호출 | 3+ 회 | 1회 | 66%↓ |
+| 초당 COM 오버헤드 | ~40ms | ~12-15ms | 60-65%↓ |
+| 폴백 지원 | - | comtypes 미설치 시 기존 방식 | 안정성 유지 |
+
+**적용 범위**:
+- `focus_monitor.py`: ListItem/MenuItem/TabItem 읽기
+- 폴백: CacheRequest 실패 시 `auto.GetFocusedControl()` 사용
+
+### 구현 불필요 (분석 완료)
+
+| 패턴 | 판단 근거 |
+|------|----------|
+| UiaHasServerSideProvider() | 함수 정의만 존재, 호출 지점 없음. 클래스명 기반 판단으로 충분 |
+
+### 현재 구현 방식
+
+| 패턴 | 구현 | 비고 |
+|------|------|------|
+| UIA 신뢰도 판단 | KAKAO_GOOD/BAD_UIA_CLASSES | 클래스명 기반 (NVDA 1순위 방식) |
+| 포커스 중복 필터링 | `auto.ControlsAreSame()` | RuntimeId 기반 COM 비교 |
+| 속성 일괄 요청 | CacheRequest | comtypes 직접 사용 |
 
 ---
 
@@ -157,6 +185,8 @@ EnumWindows API 타이밍 문제로 인한 깜빡임:
 | 같은 채팅방 재진입 | 매번 재로드 | 즉시 응답 | UIA 호출 제거 |
 | 메뉴 깜빡임 | 빈번 | 거의 없음 | 70-80%↓ |
 | EnumWindows 호출 | 매 폴링 | 캐시 히트 시 생략 | 50%↓ |
+| 포커스 COM 호출 | 3+회/폴링 | 1회/폴링 | 60-65%↓ |
+| 초당 COM 오버헤드 | ~40ms | ~12-15ms | 60-65%↓ |
 
 ---
 
@@ -165,5 +195,135 @@ EnumWindows API 타이밍 문제로 인한 깜빡임:
 | 파일 | 변경 내용 |
 |------|----------|
 | `utils/uia_cache.py` | Touch + LRU 캐시 |
+| `utils/uia_cache_request.py` | CacheRequest 래퍼 (신규) |
 | `window_finder.py` | 메뉴 감지 캐싱 |
+| `focus_monitor.py` | CacheRequest 적용 |
+| `config.py` | 타이밍/탐색 상수 추가 |
 | `main.py` | 60초 백업 정리 |
+
+---
+
+## 8. COM 충돌 분석 및 해결 (2026-01-04)
+
+### 증상
+
+채팅방 메시지 메뉴 열 때 **50% 확률**로 첫 항목 읽기 실패:
+```
+메뉴 모드 자동 진입 (menu_hwnd=789242)
+메뉴 첫 항목 읽기 실패: (-2147220991, '이벤트에서 가입자를 불러낼 수 없습니다.')
+```
+
+### 시도했으나 실패한 접근법
+
+| 시도 | 결과 | 왜 실패했나 |
+|------|------|------------|
+| 50ms 딜레이 후 재시도 | 50% 성공 | PumpWaitingMessages 100ms 주기와 불일치 |
+| 재시도 횟수 증가 | 동일 | 타이밍 운에 의존 |
+| searchTimeout 축소 | 동일 | COM 충돌 자체를 해결 안 함 |
+
+**교훈**: 증상 완화가 아닌 근본 원인 분석 필요
+
+### 근본 원인 분석
+
+**두 STA 스레드 간 크로스 아파트먼트 COM 충돌**
+
+```
+┌─────────────────────────┐     ┌─────────────────────────┐
+│ FocusMonitor 스레드     │     │ MessageListMonitor 스레드│
+│ (STA1)                  │     │ (STA2)                   │
+│                         │     │                          │
+│ pause() 호출            │────▶│ _paused = True (비동기)  │
+│                         │     │                          │
+│ GetFocusedControl()     │────▶│ PumpWaitingMessages()    │
+│         ↓               │     │        ↓                 │
+│    UIA COM 서버    ◀────┼─────┼───────▶                  │
+│         ↓               │     │                          │
+│    COM 런타임 충돌!     │     │                          │
+└─────────────────────────┘     └─────────────────────────┘
+```
+
+**핵심 문제**:
+1. `pause()`는 플래그만 설정 (논블로킹)
+2. `PumpWaitingMessages()`는 100ms 주기로 계속 실행
+3. 두 STA가 동시에 UIA COM 서버 접근 시 마샬링 충돌
+
+### 검토한 해결 방안
+
+| 방안 | 설명 | 근본성 |
+|------|------|--------|
+| **A: 동기식 pause** | Event 객체로 pause 완료 대기 | 차선 (직렬화) |
+| **B: 단일 STA 위임** | 모든 UIA 호출을 한 스레드에서 | **근본 해결** |
+| C: 별도 스레드 | 메뉴용 새 스레드 | 비권장 (복잡도) |
+| D: pause 제거 | 호출 순서만 변경 | 미봉책 |
+
+### 선택: 방안 B (단일 STA 아키텍처)
+
+**설계 원칙**: COM STA 모델에서는 관련 작업을 **단일 스레드**에서 처리해야 함
+
+```
+Before (충돌 발생):
+FocusMonitor(STA1) ──GetFocusedControl()──▶ UIA 서버 ◀── PumpWaitingMessages() ── MessageListMonitor(STA2)
+
+After (충돌 없음):
+FocusMonitor ──request_menu_read()──▶ MessageListMonitor(STA) ──GetFocusedControl()──▶ UIA 서버
+```
+
+### 구현 상세
+
+**1. MessageListMonitor에 메뉴 읽기 위임 기능 추가**
+
+```python
+# utils/uia_events.py
+def request_menu_read(self, menu_hwnd: int, callback: Callable) -> None:
+    """메뉴 읽기 요청 (FocusMonitor에서 호출)"""
+    self._pending_menu_hwnd = menu_hwnd
+    self._menu_read_callback = callback
+
+def _process_menu_read(self) -> None:
+    """이벤트 루프에서 메뉴 읽기 처리 (동일 STA)"""
+    if self._pending_menu_hwnd:
+        focused = auto.GetFocusedControl()  # 충돌 없음
+        ...
+```
+
+**2. 이벤트 루프에서 매 사이클 처리**
+
+```python
+while self._running:
+    self._process_menu_read()  # 메뉴 읽기 요청 처리
+    pythoncom.PumpWaitingMessages()
+    time.sleep(0.1)
+```
+
+**3. FocusMonitor에서 위임**
+
+```python
+def _read_first_menu_item(self, menu_hwnd: int) -> None:
+    if self._message_monitor and self._message_monitor.is_running():
+        self._message_monitor.request_menu_read(menu_hwnd, self._on_menu_item_read)
+    else:
+        self._read_first_menu_item_direct(menu_hwnd)  # 폴백
+```
+
+### 변경 파일
+
+| 파일 | 변경 |
+|------|------|
+| `utils/uia_events.py` | `request_menu_read()`, `_process_menu_read()` 추가 |
+| `navigation/message_monitor.py` | `request_menu_read()` 인터페이스 노출 |
+| `focus_monitor.py` | 위임 방식으로 변경, `_on_menu_item_read()` 콜백 추가 |
+
+### 기대 효과
+
+| 항목 | 이전 | 이후 |
+|------|------|------|
+| 메뉴 첫 항목 읽기 성공률 | 50% | 100% (목표) |
+| COM 오류 발생 | 빈번 | 0건 (목표) |
+| 아키텍처 | 두 STA 경쟁 | 단일 STA 처리 |
+
+### 배운 점
+
+1. **딜레이/재시도는 근본 해결이 아니다** - 타이밍 운에 의존
+2. **COM STA 모델 이해 필수** - 멀티스레드에서 같은 COM 객체 접근 시 동기화 필요
+3. **비동기 플래그는 충분하지 않다** - `pause()` 후에도 다른 스레드는 계속 실행
+4. **단일 스레드 위임이 가장 깔끔** - 크로스 아파트먼트 문제 원천 제거

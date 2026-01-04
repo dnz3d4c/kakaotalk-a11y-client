@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 import uiautomation as auto
 
+from ..config import TIMING_RESUME_DEBOUNCE
+
 try:
     from comtypes import COMError, COMObject
     from comtypes.client import CreateObject, GetModule
@@ -203,22 +205,14 @@ class HybridFocusMonitor:
             time.sleep(self.polling_interval)
 
     def _is_focus_changed(self, current: auto.Control) -> bool:
-        """포커스가 변경되었는지 확인"""
+        """포커스가 변경되었는지 확인 (CompareElements API 사용)"""
         if not self._last_focus:
             return True
 
         try:
-            # 이름, 클래스, 타입으로 비교
-            if (current.Name != self._last_focus.Name or
-                current.ClassName != self._last_focus.ClassName or
-                current.ControlType != self._last_focus.ControlType):
-                return True
-
-            # AutomationId로 추가 비교
-            if current.AutomationId != self._last_focus.AutomationId:
-                return True
-
-            return False
+            # IUIAutomation.CompareElements()로 정확한 요소 비교
+            # RuntimeId 기반으로 같은 속성의 다른 요소도 정확히 구분
+            return not auto.ControlsAreSame(current, self._last_focus)
         except Exception:
             return True
 
@@ -376,6 +370,8 @@ class MessageListMonitor:
     - pause(): 이벤트 수신 유지, 콜백만 무시 (COM 재등록 오버헤드 없음)
     - resume(): 콜백 처리 재개
     - 팝업메뉴 열림/닫힘 시 stop/start 대신 사용하여 CPU 스파이크 방지
+
+    메뉴 읽기는 NVDA에 위임 (메뉴 모드에서 pause만 수행).
     """
 
     def __init__(self, list_control: auto.Control):
@@ -388,6 +384,7 @@ class MessageListMonitor:
         self._running = False
         self._paused = False  # pause 상태 (이벤트 수신은 유지, 콜백만 무시)
         self._pause_time = 0.0  # 마지막 pause 시각 (debounce용)
+        self._pause_complete = threading.Event()  # 동기식 pause용
         self._thread: Optional[threading.Thread] = None
         self._callback: Optional[Callable[[MessageEvent], None]] = None
         self._last_count = 0
@@ -398,6 +395,10 @@ class MessageListMonitor:
         self._event_handler = None  # StructureChanged 핸들러
         self._focus_handler = None  # FocusChanged 핸들러
         self._root_element = None
+
+        # 핸들러 해제/재등록 요청 플래그 (스레드 안전)
+        self._pending_unregister = False
+        self._pending_register = False
 
         log.trace(f"MessageListMonitor 초기화: comtypes={HAS_COMTYPES}")
 
@@ -439,30 +440,49 @@ class MessageListMonitor:
 
         log.debug("MessageListMonitor 중지됨")
 
-    def pause(self) -> None:
-        """이벤트 처리 일시 중지 (핸들러 유지, COM 재등록 없음)
+    def pause(self, wait: bool = True) -> None:
+        """이벤트 처리 일시 중지 + 이벤트 핸들러 해제 요청
 
-        팝업메뉴 열릴 때 호출. 이벤트는 계속 수신하지만 콜백 무시.
+        팝업메뉴 열릴 때 호출. 이벤트 핸들러 해제로 COM 충돌 방지.
+        실제 해제는 이벤트 루프 스레드에서 수행 (COM 스레드 규칙).
+
+        Args:
+            wait: True면 이벤트 루프가 안전 상태가 될 때까지 대기
         """
         if not self._paused:
+            self._pause_complete.clear()
             self._paused = True
             self._pause_time = time.time()
-            log.debug("MessageListMonitor 일시 중지")
+
+            # 이벤트 핸들러 해제 요청 (이벤트 루프에서 실제 해제)
+            self._pending_unregister = True
+
+            if wait:
+                # 이벤트 루프가 해제 완료할 때까지 대기 (최대 200ms)
+                self._pause_complete.wait(timeout=0.2)
+
+            log.debug("MessageListMonitor 일시 중지 (핸들러 해제)")
 
     def resume(self) -> None:
-        """이벤트 처리 재개
+        """이벤트 처리 재개 + 이벤트 핸들러 재등록 요청
 
-        팝업메뉴 닫힐 때 호출. 콜백 처리 다시 시작.
+        팝업메뉴 닫힐 때 호출. 이벤트 핸들러 재등록.
+        실제 재등록은 이벤트 루프 스레드에서 수행 (COM 스레드 규칙).
         debounce: pause 후 0.3초 이내 resume 무시 (메뉴 감지 플리커 방지)
         """
         if self._paused:
             # debounce: 너무 빠른 resume 방지
             elapsed = time.time() - self._pause_time
-            if elapsed < 0.3:
-                log.trace(f"resume 무시 (debounce: {elapsed:.2f}s < 0.3s)")
+            if elapsed < TIMING_RESUME_DEBOUNCE:
+                log.trace(f"resume 무시 (debounce: {elapsed:.2f}s < {TIMING_RESUME_DEBOUNCE}s)")
                 return
             self._paused = False
-            log.debug("MessageListMonitor 재개")
+
+            # 이벤트 핸들러 재등록 요청 (이벤트 루프에서 실제 등록)
+            if self._running:
+                self._pending_register = True
+
+            log.debug("MessageListMonitor 재개 (핸들러 재등록)")
 
     @property
     def is_paused(self) -> bool:
@@ -499,7 +519,25 @@ class MessageListMonitor:
 
             # 메시지 펌프 루프
             while self._running:
+                # 핸들러 해제 요청 처리 (같은 스레드에서 해제 - COM 규칙)
+                if self._pending_unregister:
+                    self._pending_unregister = False
+                    self._unregister_event()
+                    self._pause_complete.set()  # pause 완료 신호
+
+                # 핸들러 재등록 요청 처리
+                if self._pending_register:
+                    self._pending_register = False
+                    self._try_register_event()
+
+                # pause 상태: 이벤트 펌프 스킵 (NVDA가 메뉴 읽기)
+                if self._paused:
+                    time.sleep(0.05)
+                    continue
+
+                # 이벤트 펌프 (StructureChanged 콜백 처리)
                 pythoncom.PumpWaitingMessages()
+
                 time.sleep(0.1)  # 100ms 간격
 
         except Exception as e:

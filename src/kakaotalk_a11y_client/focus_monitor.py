@@ -19,7 +19,15 @@ from .window_finder import (
     is_kakaotalk_window,
     is_kakaotalk_chat_window,
 )
+from .config import (
+    TIMING_MENU_MODE_POLL_INTERVAL,
+    TIMING_MENU_GRACE_PERIOD,
+    TIMING_GRACE_POLL_INTERVAL,
+    TIMING_INACTIVE_POLL_INTERVAL,
+    TIMING_NORMAL_POLL_INTERVAL,
+)
 from .accessibility import speak
+from .utils.uia_cache_request import get_focused_with_cache
 from .utils.debug import get_logger
 
 if TYPE_CHECKING:
@@ -155,32 +163,32 @@ class FocusMonitorService:
                     # grace period 갱신
                     self._mode_manager.update_menu_closed_time()
 
-                    # 메뉴 항목 읽기 (UIA로)
+                    # 메뉴 항목 읽기 (CacheRequest 사용, 위임 없이 직접 처리)
                     try:
-                        focused = auto.GetFocusedControl()
-                        if focused and focused.ControlTypeName == 'MenuItemControl':
-                            name = focused.Name or ""
+                        cached = get_focused_with_cache()
+                        if cached and cached.control_type_name == 'MenuItemControl':
+                            name = cached.name
                             if name and name != self._last_focused_name:
                                 self._last_focused_name = name
-                                last_focused_type = 'MenuItemControl'
                                 speak(name)
                     except Exception:
                         pass
 
-                    time.sleep(0.15)  # 메뉴 모드: 빠른 폴링
+                    time.sleep(TIMING_MENU_MODE_POLL_INTERVAL)
                     continue
                 else:
                     # 메뉴 창 없음 → 메뉴 모드 종료 (grace period 적용)
                     if self._mode_manager.in_context_menu_mode:
-                        # grace period: 마지막 메뉴 감지 후 0.3초간은 resume 지연
+                        # grace period: 마지막 메뉴 감지 후 일정 시간 동안 resume 지연
                         # (하위 메뉴 전환 시 잠깐 창 없어지는 현상 대응)
-                        menu_grace = 0.3
+                        menu_grace = TIMING_MENU_GRACE_PERIOD
                         if self._mode_manager.should_exit_navigation_by_grace_period(menu_grace):
                             self._mode_manager.exit_context_menu_mode(self._message_monitor)
+                            self._last_focused_name = None  # 메뉴 종료 후 리셋 (중복 체크 방지)
                             log.trace("메뉴 모드 자동 종료")
                         else:
                             # grace period 동안은 나머지 코드 스킵 (_last_focused_name 리셋 방지)
-                            time.sleep(0.15)
+                            time.sleep(TIMING_GRACE_POLL_INTERVAL)
                             continue
 
                 # 2. 카카오톡 창이 아니면 UIA 호출 안 함 (CPU 절약)
@@ -197,7 +205,7 @@ class FocusMonitorService:
                         log.trace("메뉴 모드 자동 종료 (비카카오톡 창)")
                     self._last_focused_name = None
                     last_focused_type = None
-                    time.sleep(0.5)
+                    time.sleep(TIMING_INACTIVE_POLL_INTERVAL)
                     continue
 
                 # 3. 채팅방 창이면 자동으로 네비게이션 모드 진입
@@ -229,12 +237,12 @@ class FocusMonitorService:
                         else:
                             log.trace("메뉴 닫힘 grace period - MessageMonitor 유지")
 
-                # 4. ListItemControl/TabItemControl 읽기 (메뉴가 아닌 경우에만 여기 도달)
+                # 4. ListItemControl/TabItemControl 읽기 (CacheRequest 최적화)
                 try:
-                    focused = auto.GetFocusedControl()
-                    if focused:
-                        control_type = focused.ControlTypeName
-                        name = focused.Name or ""
+                    cached = get_focused_with_cache()
+                    if cached:
+                        control_type = cached.control_type_name
+                        name = cached.name
 
                         if control_type == 'ListItemControl':
                             if name and name != self._last_focused_name:
@@ -242,12 +250,13 @@ class FocusMonitorService:
                                 last_focused_type = control_type
                                 self._speak_item(name, control_type)
                         elif control_type == 'TabItemControl':
-                            # 탭 항목: 선택 상태 포함 읽기
+                            # 탭 항목: 선택 상태는 폴백 필요 (CacheRequest 미지원)
                             if name and name != self._last_focused_name:
                                 self._last_focused_name = name
                                 last_focused_type = control_type
-                                # SelectionItemPattern으로 선택 여부 확인
+                                # SelectionItemPattern은 기존 방식으로 조회
                                 try:
+                                    focused = auto.GetFocusedControl()
                                     is_selected = focused.GetSelectionItemPattern().IsSelected
                                     status = "선택됨" if is_selected else ""
                                     speak_text = f"{name} 탭 {status}".strip()
@@ -260,6 +269,34 @@ class FocusMonitorService:
                                 log.trace(f"[기타] {control_type}: {name[:30] if name else '(no name)'}...")
                             self._last_focused_name = None
                             last_focused_type = control_type
+                    else:
+                        # 폴백: CacheRequest 실패 시 기존 방식
+                        focused = auto.GetFocusedControl()
+                        if focused:
+                            control_type = focused.ControlTypeName
+                            name = focused.Name or ""
+
+                            if control_type == 'ListItemControl':
+                                if name and name != self._last_focused_name:
+                                    self._last_focused_name = name
+                                    last_focused_type = control_type
+                                    self._speak_item(name, control_type)
+                            elif control_type == 'TabItemControl':
+                                if name and name != self._last_focused_name:
+                                    self._last_focused_name = name
+                                    last_focused_type = control_type
+                                    try:
+                                        is_selected = focused.GetSelectionItemPattern().IsSelected
+                                        status = "선택됨" if is_selected else ""
+                                        speak_text = f"{name} 탭 {status}".strip()
+                                    except Exception:
+                                        speak_text = f"{name} 탭"
+                                    self._speak_item(speak_text, control_type)
+                            else:
+                                if control_type != last_focused_type:
+                                    log.trace(f"[기타] {control_type}: {name[:30] if name else '(no name)'}...")
+                                self._last_focused_name = None
+                                last_focused_type = control_type
 
                 except Exception:
                     pass
@@ -271,7 +308,7 @@ class FocusMonitorService:
                     message_list_cache.cleanup_expired()
                     last_cleanup = now
 
-                time.sleep(0.3)  # 평상시: 300ms
+                time.sleep(TIMING_NORMAL_POLL_INTERVAL)
         finally:
             pythoncom.CoUninitialize()
 

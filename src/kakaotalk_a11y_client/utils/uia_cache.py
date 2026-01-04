@@ -208,18 +208,10 @@ class UIACache:
 # 메시지 목록 캐시 (폴링 간격과 동기화: 1.0초)
 message_list_cache = UIACache(default_ttl=1.0)
 
-# 메뉴 컨트롤 캐시 (중간 TTL)
-menu_cache = UIACache(default_ttl=0.5)
-
-# 윈도우 핸들 캐시 (긴 TTL - 잘 안 변함)
-window_cache = UIACache(default_ttl=1.0)
-
 
 def clear_all_caches() -> None:
     """모든 글로벌 캐시 비우기"""
     message_list_cache.clear()
-    menu_cache.clear()
-    window_cache.clear()
     profile_logger.info("모든 UIA 캐시 초기화됨")
 
 
@@ -227,5 +219,3 @@ def log_all_cache_stats() -> None:
     """모든 글로벌 캐시 통계 로깅"""
     profile_logger.info("=== UIA 캐시 통계 ===")
     profile_logger.info(f"message_list_cache: {message_list_cache.get_stats()}")
-    profile_logger.info(f"menu_cache: {menu_cache.get_stats()}")
-    profile_logger.info(f"window_cache: {window_cache.get_stats()}")

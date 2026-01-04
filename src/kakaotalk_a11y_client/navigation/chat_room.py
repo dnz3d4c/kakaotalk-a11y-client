@@ -12,6 +12,7 @@ from typing import Optional
 import uiautomation as auto
 import pythoncom
 
+from ..config import SEARCH_DEPTH_MESSAGE_LIST
 from ..window_finder import KAKAOTALK_LIST_CLASS
 from ..utils.debug_tools import debug_tools
 from ..utils.uia_cache import message_list_cache
@@ -65,6 +66,10 @@ class ChatRoomNavigator:
         self.chat_control = None
         self.list_control = None
         self._hwnd = 0
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass  # 이미 해제된 경우 무시
 
     def refresh_messages(self, use_cache: bool = True) -> bool:
         """메시지 목록 새로고침 (NVDA 패턴: TTL 캐싱 적용)
@@ -88,9 +93,9 @@ class ChatRoomNavigator:
                         self.messages = cached
                         return len(self.messages) > 0
 
-                # 채팅방 내 메시지 리스트 찾기 (searchDepth 4로 축소하여 탐색 비용 절감)
+                # 채팅방 내 메시지 리스트 찾기
                 msg_list = safe_uia_call(
-                    lambda: self.chat_control.ListControl(Name="메시지", searchDepth=4),
+                    lambda: self.chat_control.ListControl(Name="메시지", searchDepth=SEARCH_DEPTH_MESSAGE_LIST),
                     default=None,
                     error_msg="메시지 리스트 찾기"
                 )

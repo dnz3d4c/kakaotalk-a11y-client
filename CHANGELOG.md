@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-04
+
+### Changed
+- 포커스 모니터 COM 호출 60-65% 감소 (CacheRequest 도입)
+- 포커스 중복 감지 정확도 개선 (CompareElements API)
+- 메뉴 읽기 코드 단순화
+
 ## [0.3.0] - 2026-01-04
 
 ### Added

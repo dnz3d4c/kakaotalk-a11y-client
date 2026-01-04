@@ -19,6 +19,7 @@ except ImportError:
     # comtypes가 없으면 기본 Exception 사용
     COMError = Exception
 
+from ..config import FILTER_MAX_CONSECUTIVE_EMPTY
 from .debug import get_logger
 from .profiler import profiler, profile_logger
 
@@ -228,7 +229,7 @@ class SmartListFilter:
         valid_items: List[auto.Control] = []
         empty_count = 0
         consecutive_empty = 0
-        max_consecutive_empty = 15  # 연속 빈 항목 한계
+        max_consecutive_empty = FILTER_MAX_CONSECUTIVE_EMPTY
 
         # 캐시 활용 (이전에 유효했던 범위 먼저)
         start_idx = 0

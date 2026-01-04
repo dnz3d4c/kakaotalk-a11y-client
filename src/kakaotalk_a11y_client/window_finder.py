@@ -8,6 +8,12 @@ import win32con
 from typing import Optional
 from dataclasses import dataclass
 
+from .config import (
+    TIMING_MENU_CACHE_TTL,
+    SEARCH_DEPTH_MESSAGE_LIST_CHECK,
+    SEARCH_DEPTH_CHAT_LIST,
+)
+
 # 카카오톡 창 클래스명 패턴
 KAKAOTALK_WINDOW_CLASS = "EVA_Window_Dblclk"
 KAKAOTALK_CHILD_CLASS = "EVA_ChildWindow"
@@ -125,7 +131,7 @@ def check_uia_accessibility() -> dict:
         if chat_control:
             # 메시지 ListControl 찾기
             msg_list = chat_control.ListControl(
-                ClassName=KAKAOTALK_LIST_CLASS, searchDepth=3
+                ClassName=KAKAOTALK_LIST_CLASS, searchDepth=SEARCH_DEPTH_MESSAGE_LIST_CHECK
             )
             if msg_list.Exists(maxSearchSeconds=1):
                 result["accessible"] = True
@@ -259,7 +265,6 @@ def is_kakaotalk_menu_window(hwnd: int) -> bool:
 
 # 메뉴 감지 캐시 (EnumWindows 호출 비용 절감)
 _menu_cache: dict = {"hwnd": None, "time": 0.0}
-_MENU_CACHE_TTL = 0.15  # 150ms 캐싱
 
 
 def find_kakaotalk_menu_window() -> Optional[int]:
@@ -268,7 +273,7 @@ def find_kakaotalk_menu_window() -> Optional[int]:
     GetForegroundWindow()와 달리, visible한 모든 창 중에서 찾음.
     팝업메뉴는 오버레이로 표시되어 포그라운드가 아닐 수 있음.
 
-    캐싱: 150ms 이내 재호출 시 이전 결과 반환 (EnumWindows 비용 절감)
+    캐싱: TTL 이내 재호출 시 이전 결과 반환 (EnumWindows 비용 절감)
 
     Returns:
         팝업메뉴 창 핸들 또는 None
@@ -277,7 +282,7 @@ def find_kakaotalk_menu_window() -> Optional[int]:
     now = time.time()
 
     # 캐시 유효하면 바로 반환
-    if now - _menu_cache["time"] < _MENU_CACHE_TTL:
+    if now - _menu_cache["time"] < TIMING_MENU_CACHE_TTL:
         return _menu_cache["hwnd"]
 
     # 실제 검색
@@ -429,9 +434,8 @@ def activate_chat_from_list(skip_first: bool = True) -> dict:
             return result
 
         # 3. 채팅 목록 찾기 (Name: "채팅", Class: EVA_VH_ListControl_Dblclk)
-        # searchDepth=6: 성능 최적화 (10에서 감소)
         chat_list = main_control.ListControl(
-            Name="채팅", ClassName=KAKAOTALK_LIST_CLASS, searchDepth=6
+            Name="채팅", ClassName=KAKAOTALK_LIST_CLASS, searchDepth=SEARCH_DEPTH_CHAT_LIST
         )
         if not chat_list.Exists(maxSearchSeconds=2):
             result["message"] = "채팅 목록을 찾을 수 없습니다"

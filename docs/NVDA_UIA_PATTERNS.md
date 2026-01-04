@@ -310,3 +310,163 @@ childrenCacheRequest.TreeScope = UIAHandler.TreeScope_Children
          ↓
     에러 핸들링 (2)
 ```
+
+---
+
+## 7. NVDAObjects/UIA 객체 모델
+
+> 상세 분석: [NVDA_DEEP_ANALYSIS.md](NVDA_DEEP_ANALYSIS.md#2-객체-모델-아키텍처)
+
+### 클래스 계층
+
+```
+NVDAObject (기반)
+└─ Window (OS 윈도우)
+   └─ UIA (UI Automation)
+      ├─ UIAWeb (웹 브라우저)
+      ├─ ExcelObject (엑셀)
+      └─ Dialog, ProgressBar 등
+```
+
+### 메타클래스 기반 동적 생성
+
+`NVDAObjects/__init__.py`
+
+```python
+DynamicNVDAObjectType.__call__()
+  1. chooseBestAPI() → API 클래스 결정
+  2. findOverlayClasses() → 오버레이 수집
+  3. appModule.chooseNVDAObjectOverlayClasses()
+  4. 동적 클래스 생성 (obj.__class__ = newCls)
+  5. initOverlayClass() 호출
+```
+
+### 오버레이 클래스 패턴
+
+```python
+# NVDAObjects/UIA/__init__.py
+class UIA(Window):
+    @classmethod
+    def findOverlayClasses(cls, obj, clsList):
+        UIAControlType = obj.UIAElement.cachedControlType
+        if UIAControlType == UIA_ListControlTypeId:
+            clsList.insert(0, List)
+        elif UIAControlType == UIA_MenuItemControlTypeId:
+            clsList.insert(0, MenuItem)
+```
+
+### 프로젝트 적용
+
+현재 미적용. 채팅 메시지용 오버레이 클래스 도입 검토 가능.
+
+---
+
+## 8. eventHandler 이벤트 시스템
+
+> 상세 분석: [NVDA_DEEP_ANALYSIS.md](NVDA_DEEP_ANALYSIS.md#3-이벤트-시스템)
+
+### 이벤트 흐름
+
+```
+플랫폼 이벤트 (WinEvent/UIA)
+    ↓
+OrderedWinEventLimiter (이벤트 병합)
+    ↓
+UIAHandler (FocusChanged, PropertyChanged)
+    ↓
+eventHandler.queueEvent()
+    ↓
+executeEvent() → speech.manager
+```
+
+### OrderedWinEventLimiter
+
+`IAccessibleHandler/orderedWinEventLimiter.py`
+
+```python
+MAX_FOCUS_EVENTS = 4           # 포커스 이벤트 최대
+MAX_WINEVENTS_PER_THREAD = 10  # 스레드당 일반 이벤트 최대
+
+# 이벤트 충돌 처리
+# SHOW + HIDE → 둘 다 제거 (최종 상태 반영)
+```
+
+### FocusLossCancellableSpeechCommand
+
+`eventHandler.py:187-310`
+
+이전 포커스 이벤트의 음성 출력 자동 취소:
+- `isLastFocusObj()` - 현재 포커스가 이 객체인가
+- `isAncestorOfCurrentFocus()` - 부모/조상인가
+- `isMenuItemOfCurrentFocus()` - 메뉴 관련인가
+
+### 프로젝트 적용
+
+- 이벤트 병합: 미적용 → MessageListMonitor에 도입 권장
+- 음성 취소: 미적용 → 빠른 포커스 전환 시 유용
+
+---
+
+## 9. compareElements API
+
+### NVDA 패턴
+
+`UIAHandler/utils.py:69-77`
+
+```python
+def isUIAElementInWalker(element, walker):
+    try:
+        newElement = walker.normalizeElement(element)
+    except COMError:
+        newElement = None
+    return newElement and UIAHandler.handler.clientObject.compareElements(element, newElement)
+```
+
+### 프로젝트 현재 (문제)
+
+```python
+# uia_utils.py:813 - Python 객체 비교 (부정확)
+if focused == parent_control:
+    return True
+```
+
+### 개선 권장
+
+```python
+def compare_elements(elem1, elem2) -> bool:
+    """COM 수준 요소 비교"""
+    try:
+        return _uia.CompareElements(elem1.NativeElement, elem2.NativeElement)
+    except Exception:
+        return False
+```
+
+---
+
+## 10. 프로젝트 적용 현황
+
+| 패턴 | NVDA | 프로젝트 | 상태 |
+|------|------|---------|------|
+| 에러 핸들링 | try-except | safe_uia_call | ✅ 적용 |
+| TTL 캐싱 | 0.5초 | UIACache | ✅ 적용 |
+| UIA 신뢰도 | good/bad 클래스 | KAKAO_*_CLASSES | ✅ 적용 |
+| CacheRequest | 11+ 속성 | 4개 필수 | ✅ 더 효율적 |
+| 이벤트 핸들링 | 전역+로컬 | 폴링 중심 | ⚠️ 부분 |
+| Workaround | 이슈 번호 | KAKAO-00X | ✅ 적용 |
+| compareElements | ✅ 사용 | ❌ Python == | ❌ 미적용 |
+| 이벤트 병합 | OrderedWinEventLimiter | ❌ 없음 | ❌ 미적용 |
+| TreeWalker | ✅ 사용 | searchDepth | ⚠️ 부분 |
+| MTA 아키텍처 | ✅ 단일 MTA | STA 다중 | ⚠️ 차이 |
+
+### 개선 우선순위
+
+1. **즉시**: compareElements 도입, COM 초기화 일관성
+2. **중기**: FocusChanged 이벤트, 이벤트 병합
+3. **장기**: MTA 전환, TreeWalker 도입
+
+---
+
+## 참고 문서
+
+- [NVDA_DEEP_ANALYSIS.md](NVDA_DEEP_ANALYSIS.md) - 심층 분석 (800줄)
+- [CONTEXT_MENU_IMPROVEMENT_ANALYSIS.md](CONTEXT_MENU_IMPROVEMENT_ANALYSIS.md) - 메뉴 읽기 개선
