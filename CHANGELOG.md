@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-01-04
+
+### Added
+- README에 감사의 말 섹션 추가 (NV Access, Microsoft, 오픈소스 커뮤니티)
+
 ## [0.3.2] - 2026-01-04
 
 메시지 읽기 안정성 개선 및 Windows UIA 이벤트 최적화.

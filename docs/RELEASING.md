@@ -59,7 +59,6 @@ feat/fix/improve 커밋 후:
 
 ### 릴리즈 전 필수 확인
 - 테스트 환경 확인 및 문서 업데이트 (README.md, USER_GUIDE.md)
-- `/new-version` 실행하여 [Unreleased] → [X.Y.Z] 변환
 - [Unreleased]에 내용 남아있으면 릴리즈 스크립트가 중단됨
 
 ### 테스트 환경 확인
@@ -73,21 +72,22 @@ feat/fix/improve 커밋 후:
 
 ## 릴리즈 스킬
 
-### `/new-version X.Y.Z`
-버전 업데이트 + CHANGELOG 변환
-- `pyproject.toml`, `__about__.py` 동시 수정
-- CHANGELOG의 `[Unreleased]` → `[X.Y.Z] - 날짜`로 변환
+### `/ship [버전]`
+전체 릴리즈 플로우 실행 (예: `/ship 0.3.3`)
 
-### `/release`
-전체 릴리즈 플로우 실행
-- `sync_release.py --release` 호출
+**버전 인자 있음:**
+1. 버전 업데이트 (`pyproject.toml`, `__about__.py`)
+2. CHANGELOG `[Unreleased]` → `[X.Y.Z] - 날짜` 변환
+3. 빌드 + GitHub Release
+
+**버전 인자 없음:**
+- 빌드 + GitHub Release만 (이미 버전 업데이트된 경우)
 
 ## 릴리즈 실행
 
 ### 사전 조건
-1. 버전 업데이트 완료 (`/new-version` 사용)
-2. CHANGELOG.md 업데이트 완료
-3. client 저장소에 커밋 완료
+1. CHANGELOG.md [Unreleased]에 변경사항 작성
+2. 미커밋 변경사항 없음
 
 ### 실행
 

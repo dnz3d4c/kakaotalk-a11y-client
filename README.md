@@ -76,6 +76,28 @@ PC 카카오톡을 공식 지원하는 스크린 리더처럼
 
 ---
 
+## 감사의 말
+
+이 프로젝트는 많은 오픈소스 커뮤니티 덕분에 가능했어요.
+
+### 접근성
+- [NV Access](https://www.nvaccess.org/) - NVDA 스크린 리더 개발팀. 시각장애인의 컴퓨터 사용을 가능하게 해주셨어요. NVDA 소스코드에서 UIA 처리 패턴을 많이 배웠어요.
+- [accessible-output2](https://github.com/accessibleapps/accessible_output2) - 스크린 리더 통합 라이브러리
+
+### 참고 자료
+- [Microsoft UI Automation](https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32) - UIA 공식 문서. 이 프로젝트의 기술적 기반이에요.
+
+### UI 자동화
+- [uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows) - Windows UIA 접근을 쉽게 만들어준 yinkaisheng님
+- [pywin32](https://github.com/mhammond/pywin32) - Windows API 바인딩
+
+### 도구
+- [OpenCV](https://opencv.org/) - 이모지 감지에 사용
+- [wxPython](https://wxpython.org/) - GUI 프레임워크
+- [PyInstaller](https://pyinstaller.org/) - exe 빌드
+
+---
+
 ## 라이선스
 
 이 프로젝트는 MIT License 하에 배포됩니다. 자유롭게 사용, 수정, 배포할 수 있어요.

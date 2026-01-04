@@ -84,17 +84,9 @@ with open(target, 'w', encoding='utf-8') as f:
 - `pyproject.toml`: `version = "X.Y.Z"`
 - `src/kakaotalk_a11y_client/__about__.py`: `__version__ = "X.Y.Z"`
 
-버전 업데이트: `/new-version X.Y.Z` 스킬 사용
+릴리즈: `/ship X.Y.Z` 스킬 사용 (버전 업데이트 + 빌드 + GitHub Release)
 
 상세 릴리즈 가이드: [RELEASING.md](docs/RELEASING.md)
-
-### 릴리즈 요청 시 (필수)
-"릴리즈", "릴리즈해", "배포" 등 요청 시 **전체 플로우 연속 실행**:
-1. CHANGELOG.md [Unreleased]에 변경사항 추가
-2. `/new-version X.Y.Z` 실행
-3. `python scripts/sync_release.py --release` 실행 (빌드+push+GitHub Release)
-
-**중간에 멈추지 말고 끝까지 실행할 것.**
 
 ## 캐시 삭제 (기능 변경/추가 후 필수)
 
