@@ -30,3 +30,4 @@ kakaotalk.py
 # Build
 build/
 dist/
+*.zip
