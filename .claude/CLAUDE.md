@@ -1,13 +1,5 @@
 # 프로젝트 지침
 
-## 완료된 작업: main.py 분리 (2026-01-04)
-
-- `mode_manager.py` (174줄): 모드 상태 + 상호 배제 규칙
-- `focus_monitor.py` (294줄): 포커스 모니터링 루프
-- main.py: 668줄 → 403줄 (265줄 감소)
-
----
-
 ## 코드 수정 전 체크리스트
 
 ### 필수 확인 사항
@@ -119,6 +111,16 @@ feat/fix/improve 커밋 후:
 2. 트리거 충족 시 → "릴리즈할까?" 제안
 3. 버전 자동 결정: feat 있으면 Minor, 없으면 Patch
 
+### 릴리즈 실행
+
+```bash
+# 전체 릴리즈 (빌드 + 동기화 + push + GitHub Release)
+python scripts/sync_release.py --release
+
+# 동기화만 (테스트용)
+python scripts/sync_release.py
+```
+
 ## 캐시 삭제 (기능 변경/추가 후 필수)
 
 코드 수정 후 테스트 전 **반드시** 파이썬 캐시 삭제.
@@ -206,9 +208,12 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 | `C:\project\kakaotalk-a11y-release` | GitHub 배포용 | main, push 허용 |
 
 ### 작업 흐름
-1. **개발**: client에서 작업
-2. **커밋**: client에 커밋
-3. **동기화**: 변경 파일을 release에 복사 후 커밋 (제외 파일 제외)
+1. **개발**: client에서 작업 + 커밋
+2. **릴리즈**: `python scripts/sync_release.py --release`
+   - PyInstaller 빌드
+   - release 저장소 동기화
+   - 커밋/태그/push
+   - GitHub Release 생성
 
 ### release 제외 파일
 - `samples/` - 민감정보 포함 개발용 샘플

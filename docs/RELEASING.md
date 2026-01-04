@@ -1,72 +1,35 @@
 # 릴리즈 가이드
 
-## 버전 체계
+## 사전 조건
 
-Semantic Versioning (MAJOR.MINOR.PATCH)
+1. 버전 업데이트 완료
+   - `pyproject.toml`
+   - `src/kakaotalk_a11y_client/__about__.py`
+2. CHANGELOG.md 업데이트 완료
+3. client 저장소에 커밋 완료
 
-## 릴리즈 체크리스트
+## 릴리즈 실행
 
-### 1. 버전 업데이트
-
-- `src/kakaotalk_a11y_client/__about__.py`
-- `pyproject.toml`
-
-### 2. CHANGELOG.md 업데이트
-
-간결하게 작성 (CONTRIBUTING.md 참조)
-
-### 3. PyInstaller 빌드
-
-```
-uv run python scripts/build.py
+```bash
+python scripts/sync_release.py --release
 ```
 
-결과물: `KakaotalkA11y-vX.X.X-win64.zip`
+자동으로 수행되는 작업:
+1. PyInstaller 빌드 → `dist/KakaotalkA11y-vX.X.X-win64.zip`
+2. release 저장소 동기화
+3. 커밋/태그/push
+4. GitHub Release 생성 (CHANGELOG 내용 자동 추출)
 
-### 4. client 저장소 커밋
+## 스크립트 실패 시
 
-```
-git add -A
-git commit -m "release: vX.X.X"
-```
+스크립트 실패 시 Claude에게 오류 메시지 전달 → 조치 방법 안내받기.
 
-### 5. release 저장소 동기화
-
-```
-uv run python scripts/sync_release.py
-```
-
-release 저장소에서:
-```
-cd C:\project\kakaotalk-a11y-release
-git add -A
-git commit -m "release: vX.X.X"
-```
-
-제외 목록은 `scripts/sync_release.py` 참조
-
-### 6. 태그 생성 (release 저장소)
-
-```
-git tag -a vX.X.X -m "vX.X.X"
-```
-
-### 7. push (release 저장소)
-
-```
-git push origin main
-git push origin vX.X.X
-```
-
-### 8. GitHub Releases 생성
-
-```
-gh release create vX.X.X dist/KakaotalkA11y-vX.X.X-win64.zip --notes "변경사항"
-```
-
-또는 CHANGELOG에서 해당 버전 섹션 복사하여 `--notes-file` 사용
+**흔한 실패 원인:**
+- release 저장소 없음 → `git clone` 필요
+- gh CLI 미설치/미인증 → 수동 Release 생성
+- 태그 충돌 → 기존 태그 삭제 후 재시도
 
 ## 주의사항
 
 - client 저장소는 push 금지 (로컬 이력 보존용)
-- 태그는 release 저장소에서만 생성
+- release 저장소가 없으면: `git clone https://github.com/dnz3d4c/kakaotalk-a11y-client C:/project/kakaotalk-a11y-release`
