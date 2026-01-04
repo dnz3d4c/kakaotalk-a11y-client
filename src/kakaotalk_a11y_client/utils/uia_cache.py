@@ -19,11 +19,12 @@ class CacheEntry:
     value: Any
     timestamp: float
     ttl_seconds: float = 0.5
+    last_access: float = field(default_factory=time.time)
 
     @property
     def is_valid(self) -> bool:
-        """TTL 내 유효한지 확인"""
-        return time.time() - self.timestamp < self.ttl_seconds
+        """TTL 내 유효한지 확인 (마지막 접근 기준)"""
+        return time.time() - self.last_access < self.ttl_seconds
 
     @property
     def age_ms(self) -> float:
@@ -45,7 +46,13 @@ class UIACache:
 
         # 또는 get_or_set 사용
         value = cache.get_or_set("key", expensive_operation)
+
+    특징:
+        - Touch: get() 시 last_access 갱신 → 자주 접근하면 만료 안 됨
+        - LRU: 최대 크기 초과 시 가장 오래된 항목 제거
     """
+
+    MAX_SIZE = 50  # 최대 캐시 항목 수
 
     def __init__(self, default_ttl: float = 0.5):
         """
@@ -68,6 +75,7 @@ class UIACache:
         """
         entry = self._cache.get(key)
         if entry and entry.is_valid:
+            entry.last_access = time.time()  # Touch: 접근 시간 갱신
             self._hit_count += 1
             return entry.value
         self._miss_count += 1
@@ -81,10 +89,17 @@ class UIACache:
             value: 저장할 값
             ttl: TTL (초). None이면 기본값 사용.
         """
+        # LRU: 크기 초과 시 가장 오래된 항목 제거
+        if key not in self._cache and len(self._cache) >= self.MAX_SIZE:
+            oldest_key = min(self._cache, key=lambda k: self._cache[k].last_access)
+            del self._cache[oldest_key]
+
+        now = time.time()
         self._cache[key] = CacheEntry(
             value=value,
-            timestamp=time.time(),
-            ttl_seconds=ttl if ttl is not None else self.default_ttl
+            timestamp=now,
+            ttl_seconds=ttl if ttl is not None else self.default_ttl,
+            last_access=now
         )
 
     def get_or_set(

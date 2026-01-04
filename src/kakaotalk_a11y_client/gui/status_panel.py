@@ -90,13 +90,13 @@ class StatusPanel(wx.Panel):
     def _update_status(self) -> None:
         """상태 업데이트"""
         # 모드 표시
-        if self.clicker._in_selection_mode:
+        if self.clicker.mode_manager.in_selection_mode:
             mode = "이모지 선택"
             self.mode_label.SetForegroundColour(wx.Colour(0, 128, 0))
-        elif self.clicker._in_context_menu_mode:
+        elif self.clicker.mode_manager.in_context_menu_mode:
             mode = "컨텍스트 메뉴"
             self.mode_label.SetForegroundColour(wx.Colour(0, 0, 128))
-        elif self.clicker._in_navigation_mode:
+        elif self.clicker.mode_manager.in_navigation_mode:
             mode = "메시지 탐색"
             self.mode_label.SetForegroundColour(wx.Colour(0, 100, 0))
         else:
@@ -105,7 +105,7 @@ class StatusPanel(wx.Panel):
         self.mode_label.SetLabel(mode)
 
         # 채팅방 상태
-        if self.clicker._in_navigation_mode and self.clicker._current_chat_hwnd:
+        if self.clicker.mode_manager.in_navigation_mode and self.clicker.mode_manager.current_chat_hwnd:
             self.chat_label.SetLabel("연결됨")
             self.chat_label.SetForegroundColour(wx.Colour(0, 128, 0))
         else:

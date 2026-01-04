@@ -96,6 +96,55 @@ src/kakaotalk_a11y_client/
 | uia_events.py | UIA 이벤트 처리 | ~625 |
 | uia_workarounds.py | 카카오톡 특수 UIA 우회 | ~190 |
 
+### 아키텍처 평가 지표
+
+**계층 구조 (4계층)**
+
+```
+┌─────────────────────────────────────────────┐
+│           GUI (wxPython)                     │
+│  gui/app.py → gui/main_frame.py             │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌──────────────────┴──────────────────────────┐
+│      Application (EmojiClicker)              │
+│  main.py                                     │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌──────────────────┴──────────────────────────┐
+│           Domain                             │
+│  navigation/ │ detector.py │ hotkeys.py     │
+│  clicker.py  │ mouse_hook.py │ settings.py  │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌──────────────────┴──────────────────────────┐
+│        Infrastructure                        │
+│  utils/uia_*.py │ utils/debug.py            │
+│  window_finder.py │ accessibility.py        │
+└─────────────────────────────────────────────┘
+```
+
+**모듈별 아키텍처 준수율** (2026-01 분석 기준)
+
+| 모듈 | 준수율 | 비고 |
+|------|--------|------|
+| utils/uia_cache.py | 92% | 모범 사례 (NVDA 패턴) |
+| utils/uia_utils.py | 89% | 모범 사례 (safe_uia_call) |
+| accessibility.py | 88% | 양호 |
+| settings.py | 86% | 양호 |
+| navigation/chat_room.py | 81% | 양호 |
+| hotkeys.py | 78% | 양호 |
+| utils/uia_events.py | 75% | 개선 필요 |
+| window_finder.py | 72% | 개선 필요 |
+| main.py | 64% | 우선 개선 대상 (책임 과다) |
+
+**의존성 방향**
+- 단방향 하향식 (GUI → Application → Domain → Infrastructure)
+- 순환 의존성 없음
+- 역방향 통신은 콜백/이벤트 패턴 사용
+
+**개발 가이드라인**: [ARCHITECTURE_RULES.md](../.claude/guides/ARCHITECTURE_RULES.md)
+
 ---
 
 ## 3. 핵심 컴포넌트
@@ -507,6 +556,29 @@ def _on_structure_changed(self, change_type):
 2. ~~**메인 창 탐색**~~ → 구현 완료
    - 친구 목록, 채팅 목록 탐색 (포커스 모니터의 ListItemControl 처리, `main.py:285-295`)
 
+### 단기 (성능)
+
+1. **메뉴 감지 안정화** (우선순위: 높음)
+
+   **현재 문제:**
+   - EVA_Menu 창 감지가 불안정하여 pause/resume 반복 발생
+   - 0.15초 폴링마다 있음/없음이 깜빡이는 현상
+
+   **적용된 개선:**
+   - 채팅방 진입 시 메뉴 모드 체크로 반복 진입 방지 ✓
+   - 메뉴 종료 시 0.3초 grace period 적용 ✓
+   - grace period 동안 `_last_focused_name` 리셋 방지 ✓
+
+   **남은 문제:**
+   - `find_kakaotalk_menu_window()` (EnumWindows 기반) 결과 불안정
+   - 메뉴 내 탐색 시 같은 항목 반복 읽힘
+
+   **후보 해결책 (미적용):**
+   - 메뉴 감지 캐싱 (마지막 감지 결과 일정 시간 유지)
+   - 항목 읽기 시간 기반 디바운싱 (같은 항목 0.5초 내 재읽기 방지)
+   - grace period 연장 (0.3초 → 0.5초, 반응성 저하 우려)
+   - pause/resume 제거 (메뉴 모드에서도 MessageMonitor 유지)
+
 ### 중기 (기능)
 
 1. **더 많은 이모지 지원**
@@ -569,3 +641,10 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\debug.log -Tail 50
 | `포커스 모니터` | 창 전환 감지 |
 | `메시지 모니터` | 새 메시지 감지 |
 | `핫키 매니저` | 핫키 이벤트 |
+| `Speech` | 음성 발화 (text, interrupt 파라미터) |
+
+### 음성 발화 정책
+
+- **기본 interrupt=False**: NVDA 자동 발화와 충돌 방지
+- 스크린 리더가 이미 읽고 있는 내용을 끊지 않음
+- 스크린 리더 미설치 시 WARNING 레벨로 fallback 로그 출력

@@ -97,6 +97,9 @@ def com_thread():
 def ensure_com_initialized(func: Callable[P, R]) -> Callable[P, R]:
     """COM 초기화 보장 데코레이터
 
+    com_thread() 컨텍스트 매니저와 동일한 패턴으로 동작.
+    새로 초기화한 경우에만 해제하여 리소스 누수 방지.
+
     사용법:
         @ensure_com_initialized
         def find_element():
@@ -104,6 +107,10 @@ def ensure_com_initialized(func: Callable[P, R]) -> Callable[P, R]:
     """
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        init_com_for_thread()  # 중복 호출 안전
-        return func(*args, **kwargs)
+        newly_initialized = init_com_for_thread()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            if newly_initialized:
+                uninit_com_for_thread()
     return wrapper

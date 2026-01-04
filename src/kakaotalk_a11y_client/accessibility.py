@@ -6,6 +6,18 @@ accessible_output2가 NVDA → SAPI5 자동 fallback 처리.
 SAPI5도 SVSFlagsAsync로 비동기 발화.
 """
 
+# 로거는 지연 초기화 (순환 import 방지)
+_log = None
+
+
+def _get_logger():
+    """로거 지연 초기화"""
+    global _log
+    if _log is None:
+        from .utils.debug import get_logger
+        _log = get_logger("Speech")
+    return _log
+
 # accessible_output2 (NVDA/JAWS/SAPI5 등)
 _ao2_output = None
 try:
@@ -16,7 +28,7 @@ except ImportError:
     pass
 
 
-def speak(text: str, interrupt: bool = True) -> bool:
+def speak(text: str, interrupt: bool = False) -> bool:
     """텍스트를 음성으로 출력한다.
 
     accessible_output2 사용 (NVDA 우선, SAPI5 fallback).
@@ -29,6 +41,7 @@ def speak(text: str, interrupt: bool = True) -> bool:
     Returns:
         출력 성공 여부
     """
+    _get_logger().debug(f"text={text!r}, interrupt={interrupt}")
     if _ao2_output is not None:
         try:
             _ao2_output.speak(text, interrupt=interrupt)
@@ -36,8 +49,8 @@ def speak(text: str, interrupt: bool = True) -> bool:
         except Exception:
             pass
 
-    # fallback: 콘솔 출력
-    print(f"[TTS] {text}")
+    # fallback: 로그 출력 (스크린 리더 없음)
+    _get_logger().warning(f"TTS fallback (no screen reader): {text}")
     return False
 
 

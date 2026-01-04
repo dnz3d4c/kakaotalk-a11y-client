@@ -1,5 +1,13 @@
 # 프로젝트 지침
 
+## 완료된 작업: main.py 분리 (2026-01-04)
+
+- `mode_manager.py` (174줄): 모드 상태 + 상호 배제 규칙
+- `focus_monitor.py` (294줄): 포커스 모니터링 루프
+- main.py: 668줄 → 403줄 (265줄 감소)
+
+---
+
 ## 코드 수정 전 체크리스트
 
 ### 필수 확인 사항
@@ -10,6 +18,30 @@
 ### 특히 주의
 - `pass`로 비어있는 함수 확인 (주석에 "비활성화됨" 등 표시 있을 수 있음)
 - `enable()` 같은 활성화 함수가 실제로 뭔가를 하는지 확인
+
+## 코드 추가 전 아키텍처 체크리스트
+
+상세 규칙: [ARCHITECTURE_RULES.md](.claude/guides/ARCHITECTURE_RULES.md)
+
+### 새 파일 추가 시
+- [ ] 계층 확인 (GUI/Application/Domain/Infrastructure)
+- [ ] 의존 방향 확인 (상위 → 하위만)
+- [ ] TYPE_CHECKING 가드로 순환 import 방지
+
+### 새 스레드 추가 시
+- [ ] `pythoncom.CoInitialize()` 호출 (UIA 사용 시)
+- [ ] `finally`에서 `pythoncom.CoUninitialize()`
+- [ ] `daemon=True` 설정
+
+### UIA 코드 추가 시
+- [ ] `safe_uia_call()` 래핑
+- [ ] `searchDepth` 명시 (최대 6)
+- [ ] 반복 접근 시 캐시 사용
+
+### 이벤트/콜백 추가 시
+- [ ] GUI 업데이트는 `wx.CallAfter()` 사용
+- [ ] 에러 핸들링 포함
+- [ ] 폴백 전략 고려
 
 ## 디버깅 원칙
 
@@ -51,6 +83,41 @@ with open(target, 'w', encoding='utf-8') as f:
     - `chat_room.py` - 채팅방 메시지 탐색
   - `keyboard_nav.py` - 키보드 후킹
 - `scripts/` - 유틸리티 스크립트
+
+## 버전 관리
+
+### 버전 정의 위치 (동기화 필수)
+- `pyproject.toml`: `version = "X.Y.Z"`
+- `src/kakaotalk_a11y_client/__about__.py`: `__version__ = "X.Y.Z"`
+
+### 버전 업데이트 방법
+`/new-version X.Y.Z` 스킬 사용
+
+### 버전 결정 기준
+
+| 버전 | 조건 | 커밋 타입 |
+|------|------|----------|
+| PATCH (0.0.x) | 기존 기능 유지보수 | fix, improve, refactor, docs, chore |
+| MINOR (0.x.0) | 새 기능 추가 | feat 1개 이상 포함 |
+| MAJOR (x.0.0) | 호환성 깨짐 | 설정 형식 변경, API 변경 |
+
+### 릴리즈 트리거
+
+**자동 트리거** (하나라도 해당 시 릴리즈 고려):
+- feat 3개 이상 축적
+- fix 5개 이상 축적
+- 보안/안정성 중요 수정
+
+**수동 판단**:
+- 사용자에게 빨리 전달 필요
+- 중요 버그 수정
+
+### 커밋 후 릴리즈 확인 (Claude 규칙)
+
+feat/fix/improve 커밋 후:
+1. 마지막 버전 태그 이후 feat/fix 개수 확인
+2. 트리거 충족 시 → "릴리즈할까?" 제안
+3. 버전 자동 결정: feat 있으면 Minor, 없으면 Patch
 
 ## 캐시 삭제 (기능 변경/추가 후 필수)
 
@@ -151,6 +218,29 @@ Get-Content C:\project\kakaotalk-a11y-client\logs\profile_*.log -Tail 50
 ### 실수 방지
 - `kakaotalk-a11y-client`는 GitHub push 금지
 - 이 폴더에 원격 저장소 추가 금지
+
+---
+
+## 문서 업데이트 자동화
+
+작업 완료 후 해당 트리거에 맞는 문서를 자동으로 업데이트.
+
+### 트리거별 필수 업데이트
+
+| 트리거 | 문서 | 체크 |
+|--------|------|------|
+| **릴리즈 준비** | CHANGELOG.md | 변경사항 추가 |
+| | README.md | 버전 번호 (있으면) |
+| | USER_GUIDE.md | 기능 변경 반영 |
+| **아키텍처 변경** | ARCHITECTURE.md | 모듈 구조, 계층도 |
+| | BUILD.md | 빌드 방식 변경 |
+| **지침 변경** | CLAUDE.md | 새 규칙 추가 |
+| | CONTRIBUTING.md | 기여 규칙 |
+
+### 수동 관리 문서 (거의 안 바뀜)
+- `UIA_*.md`, `NVDA_*.md` - 참고 문서
+- `AI_*.md` - 프롬프트 예시
+- `DOCUMENT_STYLE_GUIDE.md` - 문체 수정 이력
 
 ---
 

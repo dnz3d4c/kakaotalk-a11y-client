@@ -2,6 +2,7 @@
 # Copyright 2025-2026 dnz3d4c
 """카카오톡 창 찾기 모듈"""
 
+import time
 import win32gui
 import win32con
 from typing import Optional
@@ -256,15 +257,37 @@ def is_kakaotalk_menu_window(hwnd: int) -> bool:
         return False
 
 
+# 메뉴 감지 캐시 (EnumWindows 호출 비용 절감)
+_menu_cache: dict = {"hwnd": None, "time": 0.0}
+_MENU_CACHE_TTL = 0.15  # 150ms 캐싱
+
+
 def find_kakaotalk_menu_window() -> Optional[int]:
     """현재 열려있는 카카오톡 팝업메뉴 창 찾기.
 
     GetForegroundWindow()와 달리, visible한 모든 창 중에서 찾음.
     팝업메뉴는 오버레이로 표시되어 포그라운드가 아닐 수 있음.
 
+    캐싱: 150ms 이내 재호출 시 이전 결과 반환 (EnumWindows 비용 절감)
+
     Returns:
         팝업메뉴 창 핸들 또는 None
     """
+    global _menu_cache
+    now = time.time()
+
+    # 캐시 유효하면 바로 반환
+    if now - _menu_cache["time"] < _MENU_CACHE_TTL:
+        return _menu_cache["hwnd"]
+
+    # 실제 검색
+    hwnd = _find_kakaotalk_menu_window_impl()
+    _menu_cache = {"hwnd": hwnd, "time": now}
+    return hwnd
+
+
+def _find_kakaotalk_menu_window_impl() -> Optional[int]:
+    """메뉴 창 찾기 실제 구현 (EnumWindows 호출)."""
     result = None
 
     def enum_callback(hwnd, _):

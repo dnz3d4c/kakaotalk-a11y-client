@@ -4,6 +4,21 @@
 
 버전 체계는 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [Unreleased]
+
+## [0.3.0] - 2026-01-04
+
+### Added
+- 탭 메뉴 읽기 기능
+
+### Changed
+- main.py 책임 분리 (ModeManager, FocusMonitorService)
+- 메뉴 모드 CPU 스파이크 완화
+- 스마트 캐시 및 메뉴 감지 안정화
+
+### Fixed
+- 음성 발화 끊김 문제
+
 ## [0.2.3] - 2026-01-03
 
 ### Changed
