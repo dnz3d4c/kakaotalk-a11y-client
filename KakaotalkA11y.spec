@@ -8,10 +8,22 @@ a = Analysis(
         ('src/kakaotalk_a11y_client/emojis', 'kakaotalk_a11y_client/emojis'),
     ],
     hiddenimports=[
+        # accessible_output2 - 모든 outputs (조건부 import라 PyInstaller가 감지 못함)
         'accessible_output2',
         'accessible_output2.outputs',
+        'accessible_output2.outputs.auto',
+        'accessible_output2.outputs.base',
         'accessible_output2.outputs.nvda',
         'accessible_output2.outputs.sapi5',
+        'accessible_output2.outputs.jaws',
+        'accessible_output2.outputs.window_eyes',
+        'accessible_output2.outputs.system_access',
+        'accessible_output2.outputs.dolphin',
+        'accessible_output2.outputs.pc_talker',
+        'accessible_output2.outputs.zdsr',
+        # libloader (COM 로딩)
+        'libloader',
+        'libloader.com',
         'uiautomation',
         'win32api',
         'win32con',
@@ -39,8 +51,8 @@ a = Analysis(
         'tkinter', '_tkinter', 'tcl', 'tk',
         # 테스트/문서 모듈
         'unittest', 'test', 'pydoc', 'doctest',
-        # 네트워크/이메일 (미사용)
-        'email', 'html', 'http', 'xmlrpc', 'ftplib',
+        # 네트워크 (미사용) - email은 pywin32 의존성으로 필요
+        'html', 'http', 'xmlrpc', 'ftplib',
         # 데이터베이스 (미사용)
         'sqlite3',
         # 기타 미사용

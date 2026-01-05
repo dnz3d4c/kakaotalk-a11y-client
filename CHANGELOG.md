@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+## [0.3.4.1] - 2026-01-05
+
+### Fixed
+- dist 빌드 시 화면읽기/UIAutomation 오류 (email 모듈 누락, accessible_output2 hiddenimports 추가)
+
 ## [0.3.4] - 2026-01-05
 
 메시지 읽기 안정성 개선 및 디버그 도구 추가.
