@@ -6,6 +6,23 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-05
+
+포커스 모니터링 방식 전면 개편 (폴링 → 이벤트).
+
+### Changed
+- 포커스 변경 감지를 폴링에서 FocusChanged 이벤트로 전환
+- HybridFocusMonitor → FocusMonitor 클래스 단순화
+- 폴링 폴백 코드 제거 (이벤트 전용)
+
+### Added
+- 채팅방 진입 시 현재 포커스 메시지 자동 읽기
+- NVDA 이벤트 핸들링 패턴 문서 (docs/NVDA_EVENT_PATTERNS.md)
+- 테스트용 비프음 유틸리티 (utils/beep.py)
+
+### Fixed
+- 비카카오톡 창 (작업표시줄 등) 읽히던 문제
+
 ## [0.3.4.1] - 2026-01-05
 
 ### Fixed

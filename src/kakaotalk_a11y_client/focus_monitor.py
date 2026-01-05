@@ -28,6 +28,7 @@ from .config import (
 )
 from .accessibility import speak
 from .utils.uia_cache_request import get_focused_with_cache
+from .utils.uia_events import FocusMonitor, FocusEvent
 from .utils.debug import get_logger
 
 if TYPE_CHECKING:
@@ -57,6 +58,7 @@ class FocusMonitorService:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._last_focused_name: Optional[str] = None
+        self._focus_monitor: Optional[FocusMonitor] = None
 
     @property
     def is_running(self) -> bool:
@@ -71,6 +73,13 @@ class FocusMonitorService:
     def start(self) -> None:
         """모니터링 스레드 시작"""
         self._running = True
+
+        # FocusMonitor 시작 (이벤트 기반 ListItem/TabItem 읽기)
+        self._focus_monitor = FocusMonitor()
+        self._focus_monitor.start(on_focus_changed=self._on_focus_event)
+        log.debug(f"FocusMonitor 시작 (mode={self._focus_monitor.get_stats()['mode']})")
+
+        # 폴링 스레드 시작 (메뉴/채팅방 감지)
         self._thread = threading.Thread(
             target=self._monitor_loop,
             daemon=True
@@ -81,6 +90,12 @@ class FocusMonitorService:
     def stop(self) -> None:
         """모니터링 스레드 종료"""
         self._running = False
+
+        # FocusMonitor 종료
+        if self._focus_monitor:
+            self._focus_monitor.stop()
+            self._focus_monitor = None
+            log.debug("FocusMonitor 종료")
 
         if self._thread and self._thread.is_alive():
             # 1차 대기 (1초)
@@ -111,7 +126,6 @@ class FocusMonitorService:
 
         pythoncom.CoInitialize()
         try:
-            last_focused_type = None
             start_time = time.time()
             max_warmup = 5.0  # 최대 대기 시간 (안전장치)
             last_cleanup = start_time  # 캐시 정리 시각
@@ -157,7 +171,8 @@ class FocusMonitorService:
 
                 if menu_hwnd:
                     # 메뉴 창 존재 → 메뉴 모드
-                    if not self._mode_manager.in_context_menu_mode:
+                    first_entry = not self._mode_manager.in_context_menu_mode
+                    if first_entry:
                         self._mode_manager.enter_context_menu_mode(self._message_monitor)
                         log.trace(f"메뉴 모드 자동 진입 (menu_hwnd={menu_hwnd})")
 
@@ -172,8 +187,24 @@ class FocusMonitorService:
                             if name and name != self._last_focused_name:
                                 self._last_focused_name = name
                                 speak(name)
+                        elif first_entry:
+                            # 포커스 리다이렉트: 메뉴 컨테이너 포커스 시 첫 번째 메뉴 항목 읽기
+                            first_item_name = self._get_first_menu_item_name(menu_hwnd)
+                            if first_item_name:
+                                self._last_focused_name = first_item_name
+                                speak(first_item_name)
+                                log.trace(f"메뉴 첫 항목 리다이렉트: {first_item_name}")
                     except Exception:
-                        pass
+                        # COMError 등 발생 시 폴백: 첫 메뉴 항목 읽기 시도
+                        if first_entry:
+                            try:
+                                first_item_name = self._get_first_menu_item_name(menu_hwnd)
+                                if first_item_name:
+                                    self._last_focused_name = first_item_name
+                                    speak(first_item_name)
+                                    log.trace(f"메뉴 첫 항목 폴백: {first_item_name}")
+                            except Exception:
+                                pass
 
                     time.sleep(TIMING_MENU_MODE_POLL_INTERVAL)
                     continue
@@ -205,7 +236,6 @@ class FocusMonitorService:
                         self._mode_manager.exit_context_menu_mode(self._message_monitor)
                         log.trace("메뉴 모드 자동 종료 (비카카오톡 창)")
                     self._last_focused_name = None
-                    last_focused_type = None
                     time.sleep(TIMING_INACTIVE_POLL_INTERVAL)
                     continue
 
@@ -228,6 +258,10 @@ class FocusMonitorService:
                             self._hotkey_manager,
                         )
                         log.debug(f"채팅방 진입 결과: nav_mode={self._mode_manager.in_navigation_mode}")
+
+                        # 채팅방 진입 성공 시 현재 포커스된 항목 읽기
+                        if self._mode_manager.in_navigation_mode:
+                            self._speak_current_focus()
                 else:
                     # 메인 창이면 네비게이션 모드 종료
                     # grace period: 메뉴 닫힌 후 1초간은 MessageMonitor 중지 방지
@@ -241,69 +275,7 @@ class FocusMonitorService:
                         else:
                             log.trace("메뉴 닫힘 grace period - MessageMonitor 유지")
 
-                # 4. ListItemControl/TabItemControl 읽기 (CacheRequest 최적화)
-                try:
-                    cached = get_focused_with_cache()
-                    if cached:
-                        control_type = cached.control_type_name
-                        name = cached.name
-
-                        if control_type == 'ListItemControl':
-                            if name and name != self._last_focused_name:
-                                self._last_focused_name = name
-                                last_focused_type = control_type
-                                self._speak_item(name, control_type)
-                        elif control_type == 'TabItemControl':
-                            # 탭 항목: 선택 상태는 폴백 필요 (CacheRequest 미지원)
-                            if name and name != self._last_focused_name:
-                                self._last_focused_name = name
-                                last_focused_type = control_type
-                                # SelectionItemPattern은 기존 방식으로 조회
-                                try:
-                                    focused = auto.GetFocusedControl()
-                                    is_selected = focused.GetSelectionItemPattern().IsSelected
-                                    status = "선택됨" if is_selected else ""
-                                    speak_text = f"{name} 탭 {status}".strip()
-                                except Exception:
-                                    speak_text = f"{name} 탭"
-                                self._speak_item(speak_text, control_type)
-                        else:
-                            # 디버그: 다른 타입도 로깅 (최초 1회)
-                            if control_type != last_focused_type:
-                                log.trace(f"[기타] {control_type}: {name[:30] if name else '(no name)'}...")
-                            self._last_focused_name = None
-                            last_focused_type = control_type
-                    else:
-                        # 폴백: CacheRequest 실패 시 기존 방식
-                        focused = auto.GetFocusedControl()
-                        if focused:
-                            control_type = focused.ControlTypeName
-                            name = focused.Name or ""
-
-                            if control_type == 'ListItemControl':
-                                if name and name != self._last_focused_name:
-                                    self._last_focused_name = name
-                                    last_focused_type = control_type
-                                    self._speak_item(name, control_type)
-                            elif control_type == 'TabItemControl':
-                                if name and name != self._last_focused_name:
-                                    self._last_focused_name = name
-                                    last_focused_type = control_type
-                                    try:
-                                        is_selected = focused.GetSelectionItemPattern().IsSelected
-                                        status = "선택됨" if is_selected else ""
-                                        speak_text = f"{name} 탭 {status}".strip()
-                                    except Exception:
-                                        speak_text = f"{name} 탭"
-                                    self._speak_item(speak_text, control_type)
-                            else:
-                                if control_type != last_focused_type:
-                                    log.trace(f"[기타] {control_type}: {name[:30] if name else '(no name)'}...")
-                                self._last_focused_name = None
-                                last_focused_type = control_type
-
-                except Exception:
-                    pass
+                # 4. ListItem/TabItem 읽기는 FocusMonitor에서 이벤트 기반으로 처리
 
                 # 60초마다 캐시 정리 (백업)
                 now = time.time()
@@ -315,6 +287,133 @@ class FocusMonitorService:
                 time.sleep(TIMING_NORMAL_POLL_INTERVAL)
         finally:
             pythoncom.CoUninitialize()
+
+    def _on_focus_event(self, event: FocusEvent) -> None:
+        """FocusMonitor 콜백 - ListItem/TabItem/ListControl 읽기 (이벤트 기반)
+
+        Args:
+            event: 포커스 변경 이벤트 (control, timestamp, source 포함)
+        """
+        if not self._running:
+            return
+
+        try:
+            control = event.control
+            control_type = control.ControlTypeName
+            name = control.Name or ""
+
+            if control_type == 'ListItemControl':
+                if name and name != self._last_focused_name:
+                    self._last_focused_name = name
+                    self._speak_item(name, control_type)
+                    # chat_navigator에 현재 항목 저장 (컨텍스트 메뉴용)
+                    self._chat_navigator.current_focused_item = control
+                    log.trace(f"[이벤트] ListItem: {name[:30]}...")
+            elif control_type == 'TabItemControl':
+                if name and name != self._last_focused_name:
+                    self._last_focused_name = name
+                    # SelectionItemPattern으로 선택 상태 조회
+                    try:
+                        is_selected = control.GetSelectionItemPattern().IsSelected
+                        status = "선택됨" if is_selected else ""
+                        speak_text = f"{name} 탭 {status}".strip()
+                    except Exception:
+                        speak_text = f"{name} 탭"
+                    self._speak_item(speak_text, control_type)
+                    log.trace(f"[이벤트] TabItem: {name}")
+            elif control_type == 'ListControl' and name == "메시지":
+                # 메시지 목록상자 포커스 시 마지막 메시지 읽기
+                self._speak_last_message(control)
+        except Exception as e:
+            log.trace(f"포커스 이벤트 처리 오류: {e}")
+
+    def _speak_current_focus(self) -> None:
+        """채팅방 진입 시 현재 포커스된 항목 읽기
+
+        FocusChanged 이벤트가 채팅방 감지보다 먼저 발생해서 놓치는 문제 해결.
+        진입 후 강제로 현재 포커스 조회하여 읽기.
+        """
+        try:
+            cached = get_focused_with_cache()
+            if not cached:
+                log.trace("현재 포커스 없음")
+                return
+
+            if cached.control_type_name != 'ListItemControl':
+                log.trace(f"포커스가 ListItem 아님: {cached.control_type_name}")
+                return
+
+            name = cached.name or ""
+            if not name.strip():
+                log.trace("포커스 항목 이름 없음")
+                return
+
+            # 중복 방지
+            if name == self._last_focused_name:
+                return
+
+            self._last_focused_name = name
+            speak(name)
+
+            # chat_navigator에 현재 항목 저장 (컨텍스트 메뉴용)
+            self._chat_navigator.current_focused_item = cached
+
+            log.debug(f"채팅방 진입 시 현재 항목: {name[:30]}...")
+
+        except Exception as e:
+            log.trace(f"현재 포커스 항목 읽기 실패: {e}")
+
+    def _speak_last_message(self, list_control) -> None:
+        """메시지 목록상자 포커스 시 마지막 메시지 읽기
+
+        Args:
+            list_control: 메시지 목록 ListControl
+        """
+        try:
+            children = list_control.GetChildren()
+            if not children:
+                log.trace("메시지 목록 비어있음")
+                return
+
+            last_msg = children[-1]
+            name = last_msg.Name or ""
+            if not name.strip():
+                log.trace("마지막 메시지 이름 없음")
+                return
+
+            # 중복 방지
+            if name == self._last_focused_name:
+                return
+
+            self._last_focused_name = name
+            speak(name)
+            log.trace(f"[이벤트] 마지막 메시지: {name[:30]}...")
+
+        except Exception as e:
+            log.trace(f"마지막 메시지 읽기 실패: {e}")
+
+    def _get_first_menu_item_name(self, menu_hwnd: int) -> Optional[str]:
+        """메뉴 창의 첫 번째 메뉴 항목 이름 반환 (포커스 리다이렉트용)
+
+        Args:
+            menu_hwnd: 메뉴 창 핸들
+
+        Returns:
+            첫 번째 메뉴 항목 이름, 없으면 None
+        """
+        try:
+            import uiautomation as auto
+            menu_control = auto.ControlFromHandle(menu_hwnd)
+            if not menu_control:
+                return None
+
+            # 첫 번째 MenuItem 찾기
+            first_item = menu_control.MenuItemControl(searchDepth=3)
+            if first_item and first_item.Exists(0, 0):
+                return first_item.Name
+        except Exception as e:
+            log.trace(f"첫 메뉴 항목 조회 실패: {e}")
+        return None
 
     def _speak_item(self, name: str, control_type: str = "") -> None:
         """목록/메뉴 항목 읽기"""

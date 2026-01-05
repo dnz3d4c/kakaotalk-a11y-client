@@ -239,11 +239,11 @@ Get-Content C:\project\kakaotalk-a11y\client\logs\profile_*.log -Tail 50
 - 필요시: feat/, fix/, refactor/ 브랜치 사용
 
 ### 커밋 후 릴리즈 확인 (필수)
-feat/fix/improve 커밋 후:
-1. 마지막 버전 태그 이후 feat/fix 개수 확인
+feat/fix/improve/docs 커밋 후:
+1. 마지막 버전 태그 이후 feat/fix/docs 개수 확인
 2. 트리거 충족 시 → 사용자에게 "릴리즈할까?" 제안
-   - feat 3개 이상 또는 fix 5개 이상
-3. 미충족 시 → 현재 수치 간단 보고 (예: "feat 1/3, fix 2/5")
+   - feat 3개 이상 또는 fix 5개 이상 또는 docs 5개 이상
+3. 미충족 시 → 현재 수치 간단 보고 (예: "feat 1/3, fix 2/5, docs 1/5")
 
 ### 변경 이력 작성
 

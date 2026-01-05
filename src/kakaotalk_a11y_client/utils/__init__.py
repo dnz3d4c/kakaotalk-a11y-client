@@ -6,7 +6,7 @@ NVDA 패턴 적용:
 - COMError 핸들링 (safe_uia_call, handle_uia_errors)
 - UIA 신뢰도 판단 (is_good_uia_element, should_use_uia_for_window)
 - TTL 캐싱 (UIACache, message_list_cache)
-- 이벤트 핸들링 (HybridFocusMonitor)
+- 이벤트 핸들링 (FocusMonitor)
 - Workaround 시스템 (WORKAROUNDS)
 """
 
@@ -37,7 +37,7 @@ from .uia_cache import (
     log_all_cache_stats,
 )
 from .uia_events import (
-    HybridFocusMonitor,
+    FocusMonitor,
     FocusEvent,
     get_focus_monitor,
     start_focus_monitoring,
@@ -91,7 +91,7 @@ __all__ = [
     "clear_all_caches",
     "log_all_cache_stats",
     # uia_events
-    "HybridFocusMonitor",
+    "FocusMonitor",
     "FocusEvent",
     "get_focus_monitor",
     "start_focus_monitoring",

@@ -6,6 +6,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src/kakaotalk_a11y_client/emojis', 'kakaotalk_a11y_client/emojis'),
+        ('docs', 'docs'),
     ],
     hiddenimports=[
         # accessible_output2 - 모든 outputs (조건부 import라 PyInstaller가 감지 못함)

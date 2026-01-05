@@ -27,7 +27,7 @@ from ..accessibility import speak
 from .debug_config import debug_config
 from .debug_tools import debug_tools, KakaoNotFoundError
 from .profiler import profiler
-from .uia_events import HybridFocusMonitor, FocusEvent
+from .uia_events import FocusMonitor, FocusEvent
 
 
 _event_monitor_active = False
@@ -82,7 +82,7 @@ def _on_toggle_event_monitor():
 
     if _event_monitor_active:
         if _focus_monitor is None:
-            _focus_monitor = HybridFocusMonitor(polling_interval=0.2)
+            _focus_monitor = FocusMonitor()
         _focus_monitor.start(on_focus_changed=_on_focus_changed)
         print("[DEBUG] 이벤트 모니터 활성화 - 포커스 변경이 콘솔에 출력됩니다")
         speak("이벤트 모니터 활성화")

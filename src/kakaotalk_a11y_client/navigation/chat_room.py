@@ -7,7 +7,7 @@ NVDA 패턴 적용:
 - safe_uia_call로 COMError 처리
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import uiautomation as auto
 import pythoncom
@@ -31,6 +31,7 @@ class ChatRoomNavigator:
         self.list_control: Optional[auto.Control] = None  # 메시지 목록 ListControl
         self.is_active: bool = False
         self._hwnd: int = 0  # 캐시 키용 창 핸들
+        self._current_focused_item: Optional[Any] = None  # 현재 포커스된 메시지 (컨텍스트 메뉴용)
 
     def enter_chat_room(self, hwnd: int) -> bool:
         """채팅방 진입, 메시지 목록 로드
@@ -66,10 +67,21 @@ class ChatRoomNavigator:
         self.chat_control = None
         self.list_control = None
         self._hwnd = 0
+        self._current_focused_item = None
         try:
             pythoncom.CoUninitialize()
         except Exception:
             pass  # 이미 해제된 경우 무시
+
+    @property
+    def current_focused_item(self) -> Optional[Any]:
+        """현재 포커스된 메시지 항목 (컨텍스트 메뉴용)"""
+        return self._current_focused_item
+
+    @current_focused_item.setter
+    def current_focused_item(self, item: Optional[Any]):
+        """현재 포커스된 메시지 항목 설정"""
+        self._current_focused_item = item
 
     def refresh_messages(self, use_cache: bool = True) -> bool:
         """메시지 목록 새로고침 (NVDA 패턴: TTL 캐싱 적용)

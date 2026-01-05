@@ -138,6 +138,87 @@ UIA의 기본 단위입니다. 화면의 모든 UI 요소는 Automation Element�
 | **IsOffscreen** | 화면 밖 여부 | True/False |
 | **ProcessId** | 프로세스 ID | 1234 |
 
+### 속성 카테고리 분류
+
+UIA 속성은 용도별로 분류됩니다:
+
+**식별 (Identification)**
+| 속성 | 설명 |
+|------|------|
+| AutomationId | 개발자 지정 고유 ID |
+| Name | 사용자에게 표시되는 이름 |
+| ClassName | Win32 윈도우 클래스 |
+| RuntimeId | 런타임 고유 식별자 |
+| ProcessId | 소속 프로세스 ID |
+
+**표시 (Display)**
+| 속성 | 설명 |
+|------|------|
+| BoundingRectangle | 화면 좌표와 크기 |
+| IsOffscreen | 화면 밖 여부 |
+| Orientation | 방향 (수평/수직) |
+| HelpText | 도움말 텍스트 |
+
+**IsOffscreenBehavior (화면 밖 판별 설정)**
+
+`IsOffscreen` 속성 판별 방식 설정:
+- `Default`: 표준 판별 (요소가 뷰포트 밖이면 True)
+- `Offscreen`: 항상 화면 밖으로 처리
+- `Onscreen`: 항상 화면 안으로 처리
+
+스크롤 영역 내 요소가 "화면 밖"으로 잘못 판정되는 문제 해결에 사용.
+
+**상호작용 (Interaction)**
+| 속성 | 설명 |
+|------|------|
+| IsEnabled | 활성화 여부 |
+| HasKeyboardFocus | 키보드 포커스 보유 |
+| IsKeyboardFocusable | 포커스 가능 여부 |
+| AcceleratorKey | 단축키 |
+| AccessKey | 접근 키 (Alt+문자) |
+
+**요소 유형 (Element Type)**
+| 속성 | 설명 |
+|------|------|
+| ControlType | 컨트롤 종류 |
+| IsControlElement | Control View에 포함 여부 |
+| IsContentElement | Content View에 포함 여부 |
+| ItemType | 항목 유형 설명 |
+
+**패턴 지원 확인**
+| 속성 | 설명 |
+|------|------|
+| IsInvokePatternAvailable | Invoke 패턴 지원 |
+| IsValuePatternAvailable | Value 패턴 지원 |
+| IsScrollPatternAvailable | Scroll 패턴 지원 |
+| ... | (각 패턴마다 존재) |
+
+### 로컬라이제이션 주의사항
+
+다음 속성은 시스템 언어에 따라 값이 달라집니다:
+- `Name` - 사용자에게 표시되는 이름
+- `HelpText` - 도움말 텍스트
+- `AcceleratorKey` - 단축키 표시
+- `LocalizedControlType` - 지역화된 컨트롤 타입명
+
+자동화 시 언어 독립적인 속성(`AutomationId`, `ClassName`)을 우선 사용하세요.
+
+### 접근성 특화 속성
+
+스크린 리더와 보조 기술이 활용하는 속성:
+
+| 속성 | 설명 | 값 |
+|------|------|-----|
+| **LiveSetting** | 동적 콘텐츠 변경 알림 수준 | Off, Polite, Assertive |
+| **HeadingLevel** | 문서 헤딩 수준 | Level1~Level9, None |
+
+**LiveSetting (라이브 리전)**
+- `Off`: 변경 알림 안 함
+- `Polite`: 사용자 작업 완료 후 알림 (채팅 메시지 등)
+- `Assertive`: 즉시 알림 (긴급 오류 등)
+
+ARIA의 `aria-live` 속성과 동일 개념. 실시간 채팅 영역에서 새 메시지 알림에 중요.
+
 ### 요소 찾기 전략
 
 ```
@@ -182,7 +263,7 @@ UIA가 정의한 38개의 표준 컨트롤 타입:
 
 컨트롤이 할 수 있는 기능을 정의합니다. 하나의 컨트롤이 여러 패턴을 지원할 수 있습니다.
 
-### 주요 패턴
+### 전체 패턴 목록 (20개)
 
 | Pattern | 기능 | 지원 컨트롤 | 주요 메서드/속성 |
 |---------|------|-------------|------------------|
@@ -194,8 +275,38 @@ UIA가 정의한 38개의 표준 컨트롤 타입:
 | **ExpandCollapse** | 펼치기/접기 | TreeItem, ComboBox | `Expand()`, `Collapse()` |
 | **Toggle** | 토글 상태 | CheckBox | `Toggle()`, `ToggleState` |
 | **Scroll** | 스크롤 | ScrollBar, List | `Scroll()`, `ScrollPercent` |
+| **ScrollItem** | 스크롤해서 보이기 | ListItem | `ScrollIntoView()` |
 | **Grid** | 그리드 접근 | Table, DataGrid | `GetItem(row, col)` |
+| **GridItem** | 그리드 항목 | DataItem | `Row`, `Column` |
+| **Table** | 테이블 구조 | Table | `GetRowHeaders()` |
+| **TableItem** | 테이블 항목 | DataItem | `GetRowHeaderItems()` |
+| **RangeValue** | 범위 값 | Slider, ProgressBar | `Value`, `Minimum`, `Maximum` |
+| **Transform** | 이동/크기조정 | Window | `Move()`, `Resize()`, `Rotate()` |
+| **Dock** | 도킹 위치 | Pane | `DockPosition`, `SetDockPosition()` |
+| **MultipleView** | 다중 뷰 | Calendar | `GetViewName()`, `SetCurrentView()` |
 | **Window** | 창 제어 | Window | `Close()`, `WindowState` |
+| **VirtualizedItem** | 가상화 아이템 실체화 | ListItem (가상 스크롤) | `Realize()` |
+| **ItemContainer** | 속성으로 아이템 검색 | List, Tree | `FindItemByProperty()` |
+| **SynchronizedInput** | 입력 동기화 추적 | 입력 받는 요소 | `StartListening()`, `Cancel()` |
+
+### 동적 Control Patterns
+
+일부 패턴은 컨트롤 상태에 따라 동적으로 지원 여부가 바뀝니다:
+
+| 상황 | 패턴 변화 |
+|------|----------|
+| 멀티라인 EditBox에 텍스트 많음 | ScrollPattern 활성화 |
+| 멀티라인 EditBox에 텍스트 적음 | ScrollPattern 비활성화 |
+| ComboBox 펼쳐짐 | Selection 패턴 접근 가능 |
+| TreeItem에 자식 없음 | ExpandCollapse 비활성화 |
+
+패턴 지원 여부 확인:
+```python
+# 패턴 지원 여부 확인
+if element.GetPattern(auto.PatternId.ScrollPattern):
+    scroll = element.GetScrollPattern()
+    scroll.Scroll(auto.ScrollAmount.LargeIncrement, auto.ScrollAmount.NoAmount)
+```
 
 ### 패턴 사용 예시
 
@@ -324,15 +435,50 @@ button.click()
 
 ## 4.1 이벤트 종류
 
-UIA는 UI 변화를 이벤트로 알림:
+UIA 이벤트는 4가지 카테고리로 분류됩니다:
 
-| 이벤트 유형 | 설명 | 용도 |
-|-------------|------|------|
-| **FocusChanged** | 포커스 변경 | 현재 활성 요소 추적 |
-| **PropertyChanged** | 속성 변경 | 값, 상태 변화 감지 |
-| **StructureChanged** | 구조 변경 | 요소 추가/제거 감지 |
-| **Notification** | 알림 | 중요 변경 알림 |
-| **TextChanged** | 텍스트 변경 | 편집 내용 추적 |
+### 이벤트 카테고리
+
+| 카테고리 | 설명 | 예시 |
+|----------|------|------|
+| **Property Change** | 속성 값 변경 | 체크박스 상태, 텍스트 값 |
+| **Element Action** | 사용자/프로그램 활동 | 버튼 클릭, 메뉴 선택 |
+| **Structure Change** | 트리 구조 변경 | 항목 추가/제거 |
+| **Global Desktop** | 전역 이벤트 | 포커스 이동, 윈도우 종료 |
+
+### 주요 이벤트 목록
+
+| 이벤트 | 카테고리 | 설명 |
+|--------|----------|------|
+| **FocusChanged** | Global | 키보드 포커스 이동 |
+| **PropertyChanged** | Property | 속성 값 변경 |
+| **StructureChanged** | Structure | 트리 구조 변경 |
+| **TextChanged** | Property | 텍스트 내용 변경 |
+| **Notification** | Element | 중요 알림 |
+| **WindowOpened** | Element | 새 윈도우 열림 |
+| **WindowClosed** | Element | 윈도우 닫힘 |
+| **MenuOpened** | Element | 메뉴 열림 |
+| **MenuClosed** | Element | 메뉴 닫힘 |
+
+### 이벤트 효율성
+
+UIA Provider는 클라이언트 구독 여부에 따라 이벤트를 선택적으로 발생시킵니다:
+- 구독자 없음 → 이벤트 발생 안 함 (성능 최적화)
+- 구독자 있음 → 해당 이벤트만 발생
+
+### 이벤트 주의사항
+
+⚠️ 다음 이벤트는 실제 상태 변경 없이도 발생할 수 있습니다:
+- `PropertyChangedEvent` - 같은 값으로 다시 설정될 때
+- `ElementSelectedEvent` - 이미 선택된 항목 재선택 시
+- `TextChangedEvent` - 같은 텍스트로 덮어쓸 때
+
+이벤트 핸들러에서 실제 변경 여부를 검증하세요:
+```python
+def on_property_changed(sender, event_id, old_value, new_value):
+    if old_value != new_value:  # 실제 변경 확인
+        print(f"변경됨: {old_value} → {new_value}")
+```
 
 ## 4.2 이벤트 구독 (uiautomation)
 
@@ -486,6 +632,96 @@ if len(list_items) > 1:
     second_item.Click()
 ```
 
+### 요소 획득 방법 비교
+
+| 방법 | 용도 | 예시 |
+|------|------|------|
+| **FindFirst** | 첫 번째 일치 요소 | 특정 버튼 찾기 |
+| **FindAll** | 모든 일치 요소 | 리스트 항목 전체 |
+| **GetChildren** | 직접 자식 전체 | 컨테이너 내 요소 |
+| **TreeWalker** | 트리 순회 | 부모/형제 탐색 |
+| **FromPoint** | 좌표로 찾기 | 마우스 위치 요소 |
+| **FromHandle** | HWND로 찾기 | Win32 윈도우 연결 |
+
+### 좌표/핸들로 요소 찾기
+
+```python
+import uiautomation as auto
+
+# 마우스 위치의 요소
+element = auto.ControlFromPoint(x=500, y=300)
+print(f"좌표(500,300): {element.Name}")
+
+# 현재 마우스 위치
+cursor_element = auto.GetCursorControl()
+print(f"마우스 위치: {cursor_element.Name}")
+
+# 포커스된 요소
+focused = auto.GetFocusedControl()
+print(f"포커스: {focused.Name}")
+```
+
+### TreeWalker 활용
+
+UIA 트리를 직접 탐색할 때 사용합니다. 세 가지 미리 정의된 Walker가 있습니다:
+
+| Walker | 포함 요소 | 용도 |
+|--------|----------|------|
+| **RawViewWalker** | 모든 요소 | 디버깅, 전체 구조 파악 |
+| **ControlViewWalker** | IsControlElement=True | 일반 자동화 |
+| **ContentViewWalker** | IsContentElement=True | 데이터 추출 |
+
+```python
+import uiautomation as auto
+
+# 부모/형제 탐색
+element = auto.ButtonControl(Name='전송')
+parent = element.GetParentControl()
+next_sibling = element.GetNextSiblingControl()
+prev_sibling = element.GetPreviousSiblingControl()
+
+# 첫 번째/마지막 자식
+first_child = parent.GetFirstChildControl()
+last_child = parent.GetLastChildControl()
+```
+
+### 복합 조건 검색
+
+UIA는 조건을 조합해서 검색할 수 있습니다.
+
+**조건 조합 클래스 (.NET)**
+
+| 클래스 | 용도 | 예시 |
+|--------|------|------|
+| `AndCondition` | 모든 조건 만족 | Button이면서 Name="확인" |
+| `OrCondition` | 하나라도 만족 | Button 또는 CheckBox |
+| `NotCondition` | 조건 부정 | Name이 비어있지 않은 요소 |
+| `PropertyCondition` | 단일 속성 조건 | Name="전송" |
+
+**PropertyConditionFlags (조건 옵션)**
+
+| 플래그 | 설명 |
+|--------|------|
+| `IgnoreCase` | 대소문자 무시 |
+| `MatchSubstring` | 부분 일치 (포함 여부) |
+
+**Python uiautomation 매핑**
+
+```python
+import uiautomation as auto
+
+# AndCondition: 다중 파라미터로 암묵적 AND
+button = window.ButtonControl(Name='확인', AutomationId='okBtn')
+
+# 부분 일치: SubName 파라미터
+button = window.ButtonControl(SubName='확')  # '확인', '확정' 등 매칭
+
+# OrCondition: 직접 지원 안 함 → 여러 번 검색
+button = window.ButtonControl(Name='확인')
+if not button.Exists(timeout=0.1):
+    button = window.ButtonControl(Name='OK')
+```
+
 ## 5.2 탐색 최적화
 
 ### searchDepth 이해
@@ -522,9 +758,83 @@ if chat_list.Exists():
     # 이후 접근은 캐시된 요소 사용
     print(chat_list.Name)
     print(chat_list.BoundingRectangle)
-    
+
     # 명시적 새로고침 필요 시
     chat_list.Refind()
+```
+
+### UIA 캐싱 상세
+
+UIA는 프로세스 간 통신(IPC)을 사용하므로 매번 속성을 조회하면 성능 저하가 발생합니다. 캐싱을 활용하면 여러 속성을 한 번에 가져와 성능을 크게 개선할 수 있습니다.
+
+#### CacheRequest 개념
+
+| 옵션 | 설명 | 예시 |
+|------|------|------|
+| **캐시할 속성** | 미리 로드할 속성 지정 | Name, BoundingRectangle |
+| **캐시할 패턴** | 미리 로드할 패턴 지정 | Invoke, Value |
+| **TreeScope** | 캐시 범위 | Element, Children, Descendants |
+| **TreeFilter** | 포함할 요소 조건 | ControlView, ContentView |
+| **AutomationElementMode** | 요소 정보 로드 수준 | None, Full |
+
+**AutomationElementMode**
+- `None`: 참조만 유지, 실제 요소 정보 안 가져옴 (메모리 절약)
+- `Full`: 완전한 요소 정보 캐시 (기본값)
+
+대량 요소 검색 시 `None` 모드로 참조만 가져온 후 필요한 요소만 `Full`로 조회하면 성능 개선.
+
+#### 속성 접근 방식 비교
+
+```python
+# GetCurrentPropertyValue: 매번 IPC 발생 (느림)
+name = element.GetPropertyValue(auto.PropertyId.NameProperty)
+
+# GetCachedPropertyValue: 캐시된 값 사용 (빠름)
+# - CacheRequest로 미리 로드한 경우만 사용 가능
+# - uiautomation 패키지에서는 내부적으로 자동 캐싱 처리
+```
+
+#### uiautomation 패키지의 자동 캐싱
+
+`uiautomation` 패키지는 내부적으로 캐싱을 자동 처리합니다:
+
+```python
+import uiautomation as auto
+
+# 요소 검색 시 기본 속성들이 자동 캐싱됨
+element = window.ButtonControl(Name='전송')
+
+# 캐시된 속성 접근 (IPC 없음)
+name = element.Name  # 캐시됨
+rect = element.BoundingRectangle  # 캐시됨
+
+# UI 변경 후 캐시 갱신
+element.Refind()  # 캐시 무효화 + 재검색
+```
+
+#### 캐시 갱신이 필요한 상황
+
+| 상황 | 대응 |
+|------|------|
+| UI 구조 변경됨 | `element.Refind()` 호출 |
+| 속성값 변경됨 | 해당 속성 재조회 |
+| 오래된 캐시 사용 중 | TTL 기반 자동 갱신 구현 |
+
+#### 성능 팁
+
+```python
+# 나쁜 예: 반복문 내에서 매번 검색
+for i in range(100):
+    button = window.ButtonControl(Name='확인')  # 매번 검색!
+    button.Click()
+
+# 좋은 예: 검색 결과 재사용
+button = window.ButtonControl(Name='확인')
+for i in range(100):
+    if button.Exists(timeout=0.1):
+        button.Click()
+    else:
+        button.Refind()  # 필요 시만 재검색
 ```
 
 ## 5.3 트리 덤프 (디버깅)
@@ -695,18 +1005,111 @@ control = auto.ButtonControl(
     # 검색 조건
     Name='전송',              # 정확히 일치
     SubName='전',             # 부분 일치
+    RegexName=r'전송.*',      # 정규식 일치
     AutomationId='sendBtn',
     ClassName='Button',
     ControlType=auto.ControlType.ButtonControl,
-    
+
     # 검색 범위
     searchDepth=5,            # 탐색 깊이 (기본: 0xFFFFFFFF)
     searchFromControl=parent, # 시작 지점 (기본: 데스크톱)
-    
+
     # 검색 동작
     searchWaitTime=1.0,       # 검색 간격 (초)
     foundIndex=1,             # n번째 일치 항목 (1부터 시작)
+
+    # 커스텀 조건 (람다 함수)
+    Compare=lambda c, d: c.Name in ['확인', 'OK', '예'],
 )
+```
+
+### 이름 매칭 옵션 (Name, SubName, RegexName)
+
+세 가지 이름 검색 방식 중 **하나만** 사용할 수 있습니다 (상호 배타적).
+
+| 파라미터 | 매칭 방식 | 예시 | 매칭되는 Name |
+|----------|----------|------|--------------|
+| `Name` | 정확히 일치 | `Name='확인'` | "확인"만 |
+| `SubName` | 부분 문자열 포함 | `SubName='확'` | "확인", "확정", "미확인" |
+| `RegexName` | 정규식 (`re.match`) | `RegexName=r'확.*'` | "확인", "확정" (시작 일치) |
+
+```python
+# 정확히 일치 - 가장 안정적
+button = window.ButtonControl(Name='전송', searchDepth=3)
+
+# 부분 일치 - 이름이 동적으로 바뀌는 경우 유용
+# 예: "전송 (3)", "전송 중..." 등
+button = window.ButtonControl(SubName='전송', searchDepth=3)
+
+# 정규식 - 복잡한 패턴 매칭
+# 예: "메시지 1", "메시지 2", "메시지 100" 등
+item = window.ListItemControl(RegexName=r'메시지 \d+', searchDepth=5)
+```
+
+**주의**: `RegexName`은 `re.match()`를 사용하므로 문자열 **시작**부터 일치해야 합니다.
+- `RegexName=r'확인'` → "확인" ✅, "미확인" ❌
+- `RegexName=r'.*확인'` → "미확인" ✅
+
+### Compare 파라미터 (커스텀 조건)
+
+`Compare` 파라미터로 람다 함수를 전달해 **OR 조건**이나 복잡한 조건을 구현할 수 있습니다.
+
+```python
+# 함수 시그니처: lambda control, depth -> bool
+# - control: 현재 검사 중인 요소
+# - depth: 현재 탐색 깊이
+
+# OR 조건 - 여러 이름 중 하나 매칭
+button = window.ButtonControl(
+    searchDepth=3,
+    Compare=lambda c, d: c.Name in ['확인', 'OK', '예', 'Yes']
+)
+
+# 이름이 비어있지 않은 요소만
+items = window.ListItemControl(
+    searchDepth=5,
+    Compare=lambda c, d: c.Name and len(c.Name.strip()) > 0
+)
+
+# 특정 깊이에서만 검색
+button = window.ButtonControl(
+    Compare=lambda c, d: d == 2 and c.Name == '전송'
+)
+
+# 복합 조건
+element = window.Control(
+    Compare=lambda c, d: (
+        c.ControlType == auto.ControlType.ButtonControl and
+        c.Name and
+        '전송' in c.Name and
+        c.IsEnabled
+    )
+)
+```
+
+**활용 예시: 다국어 버튼 찾기**
+
+```python
+# 확인/OK/Yes 버튼 찾기 (언어 무관)
+CONFIRM_LABELS = ['확인', 'OK', 'Yes', '예', 'Confirm']
+confirm_btn = window.ButtonControl(
+    searchDepth=5,
+    Compare=lambda c, d: c.Name in CONFIRM_LABELS
+)
+```
+
+**Compare vs 여러 번 검색**
+
+```python
+# 방법 1: Compare로 한 번에 검색 (권장)
+button = window.ButtonControl(
+    Compare=lambda c, d: c.Name in ['확인', 'OK']
+)
+
+# 방법 2: 여러 번 검색 (느릴 수 있음)
+button = window.ButtonControl(Name='확인')
+if not button.Exists(timeout=0.1):
+    button = window.ButtonControl(Name='OK')
 ```
 
 ## 6.4 주요 메서드
@@ -866,6 +1269,33 @@ control.CaptureToImage('screenshot.png')
 
 # 7. UIA 문제 해결 가이드
 
+## UIA 예외 클래스
+
+UIA 작업 중 발생하는 주요 예외:
+
+| 예외 (.NET) | 발생 상황 | Python 매핑 |
+|-------------|----------|-------------|
+| `ElementNotAvailableException` | 요소가 더 이상 존재하지 않음 (창 닫힘, 동적 UI 변경) | `COMError` 또는 `LookupError` |
+| `ElementNotEnabledException` | 비활성 요소 조작 시도 | `COMError` |
+| `NoClickablePointException` | `GetClickablePoint()` 실패 (가려지거나 화면 밖) | `COMError` |
+
+**Python에서의 처리**
+
+```python
+import uiautomation as auto
+from comtypes import COMError
+
+try:
+    button = window.ButtonControl(Name='확인')
+    button.Click()
+except COMError as e:
+    # 요소가 사라졌거나 접근 불가
+    print(f"UIA 오류: {e}")
+except LookupError:
+    # 요소를 찾지 못함
+    print("요소를 찾을 수 없음")
+```
+
 ## 7.1 요소를 찾을 수 없음
 
 ### 증상
@@ -988,7 +1418,7 @@ if menu_item.Exists(timeout=2):
 | 리스트 로딩 | 0.5~2초 |
 | 애니메이션 완료 | 0.3~1초 |
 
-## 7.4 권한 문제
+## 7.4 권한 및 보안 문제
 
 ### 증상
 ```
@@ -1009,7 +1439,60 @@ RuntimeError: Can not get an instance of IUIAutomation
 3. **Windows 버전 확인**
    - XP는 KB971513 업데이트 필요 (레거시)
 
+### UAC와 UIA 보안 모델
+
+Windows Vista 이후 UAC(사용자 계정 컨트롤)가 UIA 접근에 영향을 미칩니다.
+
+| 상황 | 접근 가능 여부 |
+|------|---------------|
+| 일반 앱 → 일반 앱 | ✅ 가능 |
+| 일반 앱 → 관리자 앱 | ❌ 불가 (권한 상승 필요) |
+| 관리자 앱 → 모든 앱 | ✅ 가능 |
+| 일반 앱 → UAC 대화상자 | ❌ 불가 (보호됨) |
+
+### 높은 권한이 필요한 상황
+
+- 관리자 권한으로 실행된 앱 자동화
+- UAC 동의 대화상자 접근
+- 보호된 시스템 프로세스 접근
+- Windows 로그온 화면 접근
+
+### manifest 파일로 권한 요청
+
+접근성 도구가 보호된 UI에 접근하려면 manifest 파일에 `uiAccess` 속성이 필요합니다:
+
+```xml
+<trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+  <security>
+    <requestedPrivileges>
+      <requestedExecutionLevel
+        level="highestAvailable"
+        uiAccess="true" />
+    </requestedPrivileges>
+  </security>
+</trustInfo>
+```
+
+**uiAccess="true" 요구사항**:
+- 애플리케이션이 디지털 서명되어야 함
+- `Program Files` 또는 `Windows\System32` 등 보호된 경로에 설치
+- 신뢰할 수 있는 인증서로 서명
+
+**일반 자동화 스크립트**: `uiAccess`가 필요 없음. 관리자 권한 실행만으로 충분.
+
 ## 7.5 스레드 문제
+
+### 스레딩 충돌의 원인
+
+UIA는 Windows 메시지를 사용하여 통신합니다. 클라이언트가 자신의 UI 스레드에서 UIA를 호출하면 메시지 처리가 충돌하여 성능 저하나 응답 중지가 발생할 수 있습니다.
+
+### 권장 스레딩 전략
+
+| 상황 | 권장 방식 |
+|------|----------|
+| GUI 앱에서 UIA 호출 | 별도 작업 스레드 사용 |
+| 콘솔 스크립트 | 메인 스레드 사용 가능 |
+| 이벤트 핸들러 내부 | 안전 (비-UI 스레드에서 호출됨) |
 
 ### 문제: 다른 스레드에서 UIA 사용
 
@@ -1019,7 +1502,7 @@ import threading
 
 def worker():
     window = auto.WindowControl(Name='카카오톡')  # 에러 가능!
-    
+
 threading.Thread(target=worker).start()
 ```
 
@@ -1041,9 +1524,37 @@ thread.start()
 thread.join()
 ```
 
+### COM 초기화 (pythoncom 직접 사용 시)
+
+`uiautomation` 패키지 대신 `comtypes`를 직접 사용할 때:
+
+```python
+import pythoncom
+import threading
+
+def worker():
+    pythoncom.CoInitialize()  # COM 초기화
+    try:
+        # UIA 작업 수행
+        pass
+    finally:
+        pythoncom.CoUninitialize()  # 반드시 정리
+
+thread = threading.Thread(target=worker)
+thread.start()
+```
+
+### 이벤트 핸들러와 스레드
+
+- **이벤트 핸들러 내 UIA 호출**: 안전 (항상 비-UI 스레드에서 호출됨)
+- **이벤트 구독/해제**: 비-UI 스레드에서 수행 권장
+- **핸들러 등록과 해제**: 같은 스레드에서 수행
+
 ### 주의사항
+
 - 메인 스레드에서 만든 Control 객체는 다른 스레드에서 사용 불가
 - 각 스레드에서 새로 찾아야 함
+- daemon 스레드 사용 시 `finally`에서 COM 정리 보장
 
 ## 7.6 성능 최적화
 
@@ -1406,6 +1917,19 @@ log.info(f"Retry {attempt}/{max}: method={method_name}, success={success}")
 
 # 참고 자료
 
-- [Microsoft UI Automation 공식 문서](https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32)
+## Microsoft UI Automation 공식 문서
+
+- [UI Automation Overview](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-overview)
+- [Caching in UI Automation Clients](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/caching-in-ui-automation-clients)
+- [UI Automation Threading Issues](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-threading-issues)
+- [Obtaining UI Automation Elements](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/obtaining-ui-automation-elements)
+- [UI Automation Control Patterns](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-control-patterns)
+- [UI Automation Properties Overview](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-properties-overview)
+- [UI Automation Events Overview](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-events-overview)
+- [UI Automation Security Overview](https://learn.microsoft.com/en-us/dotnet/framework/ui-automation/ui-automation-security-overview)
+- [Windows Automation API (Win32)](https://learn.microsoft.com/en-us/windows/win32/winauto/entry-uiauto-win32)
+
+## Python 라이브러리
+
 - [uiautomation GitHub](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows)
 - [pywinauto 문서](https://pywinauto.readthedocs.io/)

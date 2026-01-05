@@ -48,6 +48,8 @@ NVDA 등 스크린 리더 사용자를 위한 카카오톡 접근성 향상 도�
 ```
 src/kakaotalk_a11y_client/
 ├── main.py                 # 진입점, 전체 조율
+├── focus_monitor.py        # 포커스 모니터링 서비스 (이벤트 기반)
+├── mode_manager.py         # 모드 전환 관리 (Navigation/Menu)
 ├── hotkeys.py              # RegisterHotKey 기반 전역 핫키
 ├── mouse_hook.py           # 마우스 훅 (비메시지 항목 우클릭 차단)
 ├── accessibility.py        # 음성 출력 추상화
@@ -70,8 +72,10 @@ src/kakaotalk_a11y_client/
 └── utils/
     ├── uia_utils.py        # UIA 탐색 유틸리티
     ├── uia_cache.py        # UIA 캐싱
-    ├── uia_events.py       # UIA 이벤트 처리
+    ├── uia_events.py       # UIA 이벤트 처리 (FocusMonitor, MessageListMonitor)
+    ├── uia_cache_request.py # UIA CacheRequest 관리
     ├── uia_workarounds.py  # 카카오톡 UIA 우회
+    ├── beep.py             # 테스트/디버그용 비프음
     ├── debug.py            # 로깅
     ├── debug_config.py     # 디버그 설정 관리
     ├── debug_tools.py      # 디버그 도구 (덤프, 리포트)
@@ -85,15 +89,17 @@ src/kakaotalk_a11y_client/
 
 | 파일 | 책임 | 라인 수 |
 |------|------|--------|
-| main.py | 전체 플로우 조율, 상태 관리, 이벤트 핸들링 | ~565 |
+| main.py | 전체 플로우 조율, 컴포넌트 생명주기 | ~400 |
+| focus_monitor.py | 포커스 모니터링 서비스 (FocusChanged 이벤트) | ~420 |
+| mode_manager.py | 모드 전환 관리 (Navigation/ContextMenu) | ~150 |
 | hotkeys.py | 전역 핫키 등록/해제 (RegisterHotKey API) | ~265 |
 | accessibility.py | 스크린 리더/TTS 통합 인터페이스 | ~85 |
 | window_finder.py | 카카오톡 창 탐색 및 검증 | ~400 |
-| chat_room.py | 채팅방 메시지 UIA 탐색 | ~125 |
-| message_monitor.py | 새 메시지 이벤트 기반 자동 읽기 | ~235 |
+| chat_room.py | 채팅방 메시지 UIA 탐색 | ~145 |
+| message_monitor.py | 새 메시지 이벤트 기반 자동 읽기 | ~270 |
 | uia_utils.py | UIA 공통 유틸리티 | ~880 |
 | uia_cache.py | UIA 캐싱 (메시지, 메뉴, 창) | ~215 |
-| uia_events.py | UIA 이벤트 처리 | ~625 |
+| uia_events.py | UIA 이벤트 처리 (FocusMonitor, MessageListMonitor) | ~840 |
 | uia_workarounds.py | 카카오톡 특수 UIA 우회 | ~190 |
 
 ### 아키텍처 평가 지표
@@ -237,7 +243,26 @@ class ChatRoomNavigator:
 - `exit_chat_room()`: 채팅방 이탈, 리소스 정리
 - `refresh_messages()`: 메시지 목록 새로고침
 
-### 3.5 MessageMonitor (navigation/message_monitor.py)
+### 3.5 FocusMonitorService (focus_monitor.py)
+
+포커스 변경을 감지하고 적절한 항목을 읽어주는 서비스입니다.
+
+```python
+class FocusMonitorService:
+    _mode_manager: ModeManager
+    _message_monitor: MessageMonitor
+    _chat_navigator: ChatRoomNavigator
+    _focus_monitor: FocusMonitor  # UIA FocusChanged 이벤트 처리
+```
+
+주요 기능:
+
+- **FocusChanged 이벤트 기반**: UIA `AddFocusChangedEventHandler()` 사용
+- **ListItem/TabItem 읽기**: 목록 항목, 탭 항목 포커스 시 자동 읽기
+- **메뉴 모드 관리**: EVA_Menu 창 감지 시 컨텍스트 메뉴 모드 진입
+- **채팅방 자동 진입**: 채팅방 창 감지 시 네비게이션 모드 진입
+
+### 3.6 MessageMonitor (navigation/message_monitor.py)
 
 새 메시지를 자동으로 읽어주는 클래스입니다.
 
@@ -355,11 +380,12 @@ NVDA의 네이티브 동작과 함께 작동합니다.
 
 ### 스레드 목록
 
-| 스레드 | 역할 | 폴링 간격 |
+| 스레드 | 역할 | 동작 방식 |
 |--------|------|----------|
 | Main | wx.App.MainLoop (GUI) 또는 wait_for_exit (콘솔) | - |
 | HotkeyManager | Windows 메시지 루프 | 블로킹 |
-| FocusMonitor | 포커스 모니터링 | 250~300ms (적응형) |
+| FocusMonitor | 포커스 모니터링 (폴링 + 이벤트) | 폴링: 메뉴/채팅방 감지, 이벤트: ListItem/TabItem |
+| FocusChanged 이벤트 | UIA FocusChanged 핸들러 | 이벤트 기반 |
 | MessageListMonitor | StructureChanged 이벤트 | 이벤트 기반 |
 | Callback 스레드 | 핫키 콜백 | 즉시 |
 
@@ -489,16 +515,30 @@ RegisterHotKey API를 사용합니다.
 
 ### ADR-002: 포커스 모니터링 방식
 
-적응형 폴링 (250~300ms 간격)을 사용합니다.
+**하이브리드 방식**을 사용합니다: 이벤트 기반 + 폴링 보조.
 
-이렇게 결정한 이유:
-- 이벤트 기반 (SetWinEventHook)은 불안정합니다.
-- UIA FocusChangedEvent는 신뢰성이 낮습니다.
-- 컨텍스트 메뉴 모드 시 250ms, 평상시 300ms 간격으로 동작합니다.
+**v0.4.0 변경사항:**
+- 기존: 적응형 폴링 (250~300ms 간격) 전용
+- 현재: FocusChanged 이벤트 기반 + 폴링 보조 (메뉴/채팅방 감지용)
+
+**이벤트 기반 (ListItem/TabItem 읽기):**
+- UIA `AddFocusChangedEventHandler()` 사용
+- NVDA 패턴 적용: `compareElements`로 중복 필터링
+- 비카카오톡 창 필터링 (hwnd 체크)
+
+**폴링 보조 (메뉴/채팅방 감지):**
+- EVA_Menu 창 감지 → 컨텍스트 메뉴 모드 진입
+- 채팅방 창 감지 → 네비게이션 모드 진입
+- 300ms 간격 (비활성 시 500ms)
+
+이렇게 변경한 이유:
+- 이벤트 기반이 더 빠른 응답 제공 (폴링 지연 없음)
+- CPU 부하 감소 (폴링 빈도 감소)
+- NVDA 검증된 패턴 적용으로 안정성 확보
 
 트레이드오프:
-- CPU 부하가 있지만 미미합니다.
-- 최대 300ms 응답 지연이 발생할 수 있습니다.
+- comtypes 의존성 필요
+- COM 이벤트 핸들러 등록 필요
 
 ### ADR-003: 새 메시지 감지 방식
 
