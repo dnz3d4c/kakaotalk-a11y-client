@@ -1,15 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""CacheRequest 래퍼 - COM 호출 최적화
-
-GetFocusedElementBuildCache()로 필요한 속성만 한 번에 가져옴.
-기존 uiautomation 라이브러리와 호환 유지.
-
-성능 효과:
-- 기존: GetFocusedControl() + ControlTypeName + Name = 3+ COM 호출
-- 개선: GetFocusedElementBuildCache() = 1 COM 호출
-- 예상 개선율: 60-65% COM 호출 감소
-"""
+"""CacheRequest 래퍼. GetFocusedElementBuildCache()로 COM 호출 60-65% 감소."""
 
 from typing import Optional, NamedTuple, Any
 
@@ -80,7 +71,6 @@ CONTROL_TYPE_NAMES = {
 
 
 class CachedFocusInfo(NamedTuple):
-    """캐시된 포커스 정보"""
     control_type: int           # ControlType ID
     control_type_name: str      # ControlTypeName (문자열)
     name: str                   # Name
@@ -90,10 +80,7 @@ class CachedFocusInfo(NamedTuple):
 
 
 class CacheRequestManager:
-    """CacheRequest 관리자
-
-    싱글톤으로 사용하여 UIA 객체 재사용.
-    """
+    """싱글톤. UIA 객체 재사용."""
 
     def __init__(self):
         self._uia = None
@@ -101,7 +88,6 @@ class CacheRequestManager:
         self._initialized = False
 
     def _ensure_initialized(self) -> bool:
-        """지연 초기화"""
         if self._initialized:
             return self._uia is not None
 
@@ -130,14 +116,7 @@ class CacheRequestManager:
             return False
 
     def get_focused_cached(self) -> Optional[CachedFocusInfo]:
-        """캐시된 포커스 정보 가져오기
-
-        GetFocusedElementBuildCache() 사용하여 한 번의 COM 호출로
-        필요한 모든 속성 수집.
-
-        Returns:
-            CachedFocusInfo 또는 None (실패 시)
-        """
+        """단일 COM 호출로 포커스 정보 수집."""
         if not self._ensure_initialized():
             return None
 
@@ -181,7 +160,6 @@ _cache_manager: Optional[CacheRequestManager] = None
 
 
 def get_cache_manager() -> CacheRequestManager:
-    """싱글톤 CacheRequestManager 가져오기"""
     global _cache_manager
     if _cache_manager is None:
         _cache_manager = CacheRequestManager()
@@ -189,9 +167,5 @@ def get_cache_manager() -> CacheRequestManager:
 
 
 def get_focused_with_cache() -> Optional[CachedFocusInfo]:
-    """캐시된 포커스 정보 가져오기 (편의 함수)
-
-    CacheRequest 사용 가능하면 사용, 아니면 None 반환.
-    호출자가 None 시 기존 방식으로 폴백.
-    """
+    """편의 함수. CacheRequest 미지원 시 None 반환 (호출자가 폴백)."""
     return get_cache_manager().get_focused_cached()

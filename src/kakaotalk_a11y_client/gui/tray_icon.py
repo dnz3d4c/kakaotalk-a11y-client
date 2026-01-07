@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class TrayIcon(wx.adv.TaskBarIcon):
-    """시스템 트레이 아이콘 - NVDA 호환 네이티브 메뉴"""
+    """시스템 트레이 아이콘. 더블클릭으로 설정, 우클릭 메뉴 제공."""
 
     ID_SETTINGS = wx.NewIdRef()
     ID_CHECK_UPDATE = wx.NewIdRef()
@@ -26,7 +26,6 @@ class TrayIcon(wx.adv.TaskBarIcon):
         self.Bind(wx.adv.EVT_TASKBAR_LEFT_DCLICK, self.on_left_dclick)
 
     def _setup_icon(self) -> None:
-        """트레이 아이콘 설정 (기본 시스템 아이콘 사용)"""
         icon = wx.Icon()
         icon.CopyFromBitmap(
             wx.ArtProvider.GetBitmap(wx.ART_INFORMATION, wx.ART_OTHER, (16, 16))
@@ -34,7 +33,6 @@ class TrayIcon(wx.adv.TaskBarIcon):
         self.SetIcon(icon, "카카오톡 접근성 클라이언트")
 
     def CreatePopupMenu(self) -> wx.Menu:
-        """트레이 우클릭 메뉴 - Windows 네이티브 메뉴 (NVDA 호환)"""
         menu = wx.Menu()
 
         # 설정
@@ -54,17 +52,13 @@ class TrayIcon(wx.adv.TaskBarIcon):
         return menu
 
     def on_left_dclick(self, event: wx.adv.TaskBarIconEvent) -> None:
-        """더블클릭 → 설정 다이얼로그 열기"""
         self.frame.show_settings_dialog()
 
     def on_settings(self, event: wx.CommandEvent) -> None:
-        """설정 메뉴"""
         self.frame.show_settings_dialog()
 
     def on_check_update(self, event: wx.CommandEvent) -> None:
-        """업데이트 확인"""
         self.frame.check_for_update(manual=True)
 
     def on_exit(self, event: wx.CommandEvent) -> None:
-        """프로그램 종료"""
         self.frame.Close(force=True)

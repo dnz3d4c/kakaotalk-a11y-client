@@ -102,8 +102,9 @@ python scripts/sync_release.py
 자동으로 수행되는 작업:
 1. PyInstaller 빌드 → `dist/KakaotalkA11y-vX.X.X-win64.zip`
 2. release 저장소 동기화
-3. 커밋/태그/push
-4. GitHub Release 생성 (CHANGELOG 내용 자동 추출)
+3. client + release 양쪽에 태그 생성
+4. release 저장소 push
+5. GitHub Release 생성 (CHANGELOG 내용 자동 추출)
 
 ## 스크립트 실패 시
 

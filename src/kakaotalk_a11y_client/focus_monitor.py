@@ -6,6 +6,8 @@
 - 카카오톡 창 활성화 감지
 - 채팅방/메뉴 전환 감지
 - ListItem/MenuItem 포커스 시 읽어줌
+
+UIAAdapter + SpeakCallback으로 테스트 가능한 구조.
 """
 
 import threading
@@ -25,8 +27,9 @@ from .config import (
     TIMING_GRACE_POLL_INTERVAL,
     TIMING_INACTIVE_POLL_INTERVAL,
     TIMING_NORMAL_POLL_INTERVAL,
+    TIMING_MAX_WARMUP,
+    TIMING_NAVIGATION_GRACE,
 )
-from .accessibility import speak
 from .utils.uia_cache_request import get_focused_with_cache
 from .utils.uia_events import FocusMonitor, FocusEvent
 from .utils.debug import get_logger
@@ -36,12 +39,14 @@ if TYPE_CHECKING:
     from .navigation.message_monitor import MessageMonitor
     from .navigation import ChatRoomNavigator
     from .hotkeys import HotkeyManager
+    from .infrastructure.uia_adapter import UIAAdapter
+    from .infrastructure.speak_callback import SpeakCallback
 
 log = get_logger("FocusMonitor")
 
 
 class FocusMonitorService:
-    """포커스 모니터링 서비스"""
+    """포커스 모니터링 서비스. UIAAdapter + SpeakCallback 의존성 주입."""
 
     def __init__(
         self,
@@ -49,11 +54,19 @@ class FocusMonitorService:
         message_monitor: "MessageMonitor",
         chat_navigator: "ChatRoomNavigator",
         hotkey_manager: "HotkeyManager",
+        uia_adapter: Optional["UIAAdapter"] = None,
+        speak_callback: Optional["SpeakCallback"] = None,
     ):
         self._mode_manager = mode_manager
         self._message_monitor = message_monitor
         self._chat_navigator = chat_navigator
         self._hotkey_manager = hotkey_manager
+
+        # 의존성 주입 (테스트 시 mock 가능)
+        from .infrastructure.uia_adapter import get_default_uia_adapter
+        from .infrastructure.speak_callback import get_default_speak_callback
+        self._uia = uia_adapter or get_default_uia_adapter()
+        self._speak = speak_callback or get_default_speak_callback()
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -62,16 +75,15 @@ class FocusMonitorService:
 
     @property
     def is_running(self) -> bool:
-        """모니터링 실행 중 여부"""
         return self._running
 
     @property
     def last_focused_name(self) -> Optional[str]:
-        """마지막 포커스된 항목 이름 (MouseHook에서 사용)"""
+        """MouseHook에서 비메시지 항목 판단용으로 사용."""
         return self._last_focused_name
 
     def start(self) -> None:
-        """모니터링 스레드 시작"""
+        """FocusMonitor + 폴링 스레드 시작."""
         self._running = True
 
         # FocusMonitor 시작 (이벤트 기반 ListItem/TabItem 읽기)
@@ -88,7 +100,7 @@ class FocusMonitorService:
         log.debug("포커스 모니터 시작")
 
     def stop(self) -> None:
-        """모니터링 스레드 종료"""
+        """스레드 종료. 최대 2초 대기 후 강제 진행."""
         self._running = False
 
         # FocusMonitor 종료
@@ -114,20 +126,13 @@ class FocusMonitorService:
         log.debug("포커스 모니터 종료")
 
     def _monitor_loop(self) -> None:
-        """포커스 모니터링 루프 - 목록/메뉴 항목 포커스 시 읽어줌
+        """메뉴/채팅방 감지 + 모드 전환. 카카오톡 비활성 시 CPU 절약."""
+        # COM 초기화 (UIAAdapter가 스레드별 관리)
+        self._uia.init_com()
 
-        최적화:
-        1. 조건부 polling - 카카오톡 창 활성화 시에만 UIA 호출
-        2. 동적 웜업 - UIA 초기화 완료 시 바로 시작 (시스템 속도에 따라 자동 조정)
-        3. 적응형 polling - 상태에 따라 간격 조절
-        """
-        import uiautomation as auto
-        import pythoncom
-
-        pythoncom.CoInitialize()
         try:
             start_time = time.time()
-            max_warmup = 5.0  # 최대 대기 시간 (안전장치)
+            max_warmup = TIMING_MAX_WARMUP
             last_cleanup = start_time  # 캐시 정리 시각
             last_trace_state = (None, None, None)  # (hwnd, is_chat, nav_mode) - 중복 로깅 방지
 
@@ -137,12 +142,12 @@ class FocusMonitorService:
             def _warmup_uia():
                 try:
                     # 별도 스레드에서 COM 초기화 필요
-                    pythoncom.CoInitialize()
+                    self._uia.init_com()
                     try:
-                        _ = auto.GetFocusedControl()
+                        _ = self._uia.get_focused_control()
                         log.debug("UIA 캐시 워밍업 완료")
                     finally:
-                        pythoncom.CoUninitialize()
+                        self._uia.uninit_com()
                 except Exception as e:
                     log.warning(f"UIA 워밍업 실패: {e}")
                 finally:
@@ -186,13 +191,13 @@ class FocusMonitorService:
                             name = cached.name
                             if name and name != self._last_focused_name:
                                 self._last_focused_name = name
-                                speak(name)
+                                self._speak(name)
                         elif first_entry:
                             # 포커스 리다이렉트: 메뉴 컨테이너 포커스 시 첫 번째 메뉴 항목 읽기
                             first_item_name = self._get_first_menu_item_name(menu_hwnd)
                             if first_item_name:
                                 self._last_focused_name = first_item_name
-                                speak(first_item_name)
+                                self._speak(first_item_name)
                                 log.trace(f"메뉴 첫 항목 리다이렉트: {first_item_name}")
                     except Exception:
                         # COMError 등 발생 시 폴백: 첫 메뉴 항목 읽기 시도
@@ -201,7 +206,7 @@ class FocusMonitorService:
                                 first_item_name = self._get_first_menu_item_name(menu_hwnd)
                                 if first_item_name:
                                     self._last_focused_name = first_item_name
-                                    speak(first_item_name)
+                                    self._speak(first_item_name)
                                     log.trace(f"메뉴 첫 항목 폴백: {first_item_name}")
                             except Exception:
                                 pass
@@ -264,10 +269,9 @@ class FocusMonitorService:
                             self._speak_current_focus()
                 else:
                     # 메인 창이면 네비게이션 모드 종료
-                    # grace period: 메뉴 닫힌 후 1초간은 MessageMonitor 중지 방지
+                    # grace period: 메뉴 닫힌 후 일정 시간 MessageMonitor 중지 방지
                     if self._mode_manager.in_navigation_mode and not self._mode_manager.in_context_menu_mode:
-                        grace_period = 1.0
-                        if self._mode_manager.should_exit_navigation_by_grace_period(grace_period):
+                        if self._mode_manager.should_exit_navigation_by_grace_period(TIMING_NAVIGATION_GRACE):
                             self._mode_manager.exit_navigation_mode(
                                 self._message_monitor,
                                 self._chat_navigator,
@@ -286,14 +290,11 @@ class FocusMonitorService:
 
                 time.sleep(TIMING_NORMAL_POLL_INTERVAL)
         finally:
-            pythoncom.CoUninitialize()
+            # COM 해제
+            self._uia.uninit_com()
 
     def _on_focus_event(self, event: FocusEvent) -> None:
-        """FocusMonitor 콜백 - ListItem/TabItem/ListControl 읽기 (이벤트 기반)
-
-        Args:
-            event: 포커스 변경 이벤트 (control, timestamp, source 포함)
-        """
+        """ListItem/TabItem/ListControl 포커스 시 읽기."""
         if not self._running:
             return
 
@@ -328,11 +329,7 @@ class FocusMonitorService:
             log.trace(f"포커스 이벤트 처리 오류: {e}")
 
     def _speak_current_focus(self) -> None:
-        """채팅방 진입 시 현재 포커스된 항목 읽기
-
-        FocusChanged 이벤트가 채팅방 감지보다 먼저 발생해서 놓치는 문제 해결.
-        진입 후 강제로 현재 포커스 조회하여 읽기.
-        """
+        """채팅방 진입 시 현재 포커스 강제 조회. 이벤트 누락 보완용."""
         try:
             cached = get_focused_with_cache()
             if not cached:
@@ -353,7 +350,7 @@ class FocusMonitorService:
                 return
 
             self._last_focused_name = name
-            speak(name)
+            self._speak(name)
 
             # chat_navigator에 현재 항목 저장 (컨텍스트 메뉴용)
             self._chat_navigator.current_focused_item = cached
@@ -364,13 +361,9 @@ class FocusMonitorService:
             log.trace(f"현재 포커스 항목 읽기 실패: {e}")
 
     def _speak_last_message(self, list_control) -> None:
-        """메시지 목록상자 포커스 시 마지막 메시지 읽기
-
-        Args:
-            list_control: 메시지 목록 ListControl
-        """
+        """메시지 목록상자 포커스 시 마지막 메시지 읽기."""
         try:
-            children = list_control.GetChildren()
+            children = self._uia.get_direct_children(list_control)
             if not children:
                 log.trace("메시지 목록 비어있음")
                 return
@@ -386,37 +379,29 @@ class FocusMonitorService:
                 return
 
             self._last_focused_name = name
-            speak(name)
+            self._speak(name)
             log.trace(f"[이벤트] 마지막 메시지: {name[:30]}...")
 
         except Exception as e:
             log.trace(f"마지막 메시지 읽기 실패: {e}")
 
     def _get_first_menu_item_name(self, menu_hwnd: int) -> Optional[str]:
-        """메뉴 창의 첫 번째 메뉴 항목 이름 반환 (포커스 리다이렉트용)
-
-        Args:
-            menu_hwnd: 메뉴 창 핸들
-
-        Returns:
-            첫 번째 메뉴 항목 이름, 없으면 None
-        """
+        """메뉴 창의 첫 번째 항목 이름. 포커스 리다이렉트용."""
         try:
-            import uiautomation as auto
-            menu_control = auto.ControlFromHandle(menu_hwnd)
+            menu_control = self._uia.get_control_from_handle(menu_hwnd)
             if not menu_control:
                 return None
 
             # 첫 번째 MenuItem 찾기
-            first_item = menu_control.MenuItemControl(searchDepth=3)
-            if first_item and first_item.Exists(0, 0):
+            first_item = self._uia.find_menu_item_control(menu_control, search_depth=3)
+            if first_item and self._uia.control_exists(first_item, max_seconds=0):
                 return first_item.Name
         except Exception as e:
             log.trace(f"첫 메뉴 항목 조회 실패: {e}")
         return None
 
     def _speak_item(self, name: str, control_type: str = "") -> None:
-        """목록/메뉴 항목 읽기"""
+        """AccessKey 제거 후 읽기. MenuItemControl은 앞글자 제거."""
         try:
             log.trace(f"[{control_type}] {name[:50]}...")
         except UnicodeEncodeError:
@@ -430,5 +415,5 @@ class FocusMonitorService:
             if clean_name[0].isalpha() and ord(clean_name[1]) >= 0xAC00:
                 clean_name = clean_name[1:]
 
-        # interrupt=False: NVDA 자동 발화와 충돌 방지
-        speak(clean_name)
+        # SpeakCallback으로 음성 출력
+        self._speak(clean_name)

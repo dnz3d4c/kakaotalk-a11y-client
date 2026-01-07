@@ -1,21 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""COM 초기화 유틸리티
-
-스레드별 COM 초기화를 관리하여 중복 호출 방지 및 리소스 누수 방지.
-
-사용법:
-    from ..utils.com_utils import ensure_com_initialized, com_thread
-
-    # 데코레이터 사용 (권장)
-    @ensure_com_initialized
-    def my_uia_function():
-        ...
-
-    # 컨텍스트 매니저 사용
-    with com_thread():
-        ...
-"""
+"""COM 초기화 유틸리티. 스레드별 중복 호출 방지."""
 
 import threading
 from contextlib import contextmanager
@@ -33,16 +18,11 @@ R = TypeVar('R')
 
 
 def _get_thread_id() -> int:
-    """현재 스레드 ID 반환"""
     return threading.current_thread().ident or 0
 
 
 def init_com_for_thread() -> bool:
-    """현재 스레드에서 COM 초기화 (중복 호출 안전)
-
-    Returns:
-        True: 새로 초기화됨, False: 이미 초기화됨
-    """
+    """현재 스레드 COM 초기화. 새로 초기화 시 True, 이미 됐으면 False."""
     thread_id = _get_thread_id()
 
     with _lock:
@@ -55,11 +35,7 @@ def init_com_for_thread() -> bool:
 
 
 def uninit_com_for_thread() -> bool:
-    """현재 스레드에서 COM 해제
-
-    Returns:
-        True: 해제됨, False: 초기화되지 않았음
-    """
+    """현재 스레드 COM 해제. 해제 시 True, 초기화 안 됐으면 False."""
     thread_id = _get_thread_id()
 
     with _lock:
@@ -72,7 +48,6 @@ def uninit_com_for_thread() -> bool:
 
 
 def is_com_initialized() -> bool:
-    """현재 스레드에서 COM이 초기화되었는지 확인"""
     thread_id = _get_thread_id()
     with _lock:
         return thread_id in _initialized_threads
@@ -80,12 +55,7 @@ def is_com_initialized() -> bool:
 
 @contextmanager
 def com_thread():
-    """COM 초기화 컨텍스트 매니저
-
-    사용법:
-        with com_thread():
-            control = auto.ControlFromHandle(hwnd)
-    """
+    """COM 초기화/해제 컨텍스트 매니저. 새로 초기화한 경우에만 해제."""
     newly_initialized = init_com_for_thread()
     try:
         yield
@@ -95,16 +65,7 @@ def com_thread():
 
 
 def ensure_com_initialized(func: Callable[P, R]) -> Callable[P, R]:
-    """COM 초기화 보장 데코레이터
-
-    com_thread() 컨텍스트 매니저와 동일한 패턴으로 동작.
-    새로 초기화한 경우에만 해제하여 리소스 누수 방지.
-
-    사용법:
-        @ensure_com_initialized
-        def find_element():
-            return auto.WindowControl(Name='창')
-    """
+    """COM 초기화 보장 데코레이터. 새로 초기화한 경우에만 해제."""
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         newly_initialized = init_com_for_thread()

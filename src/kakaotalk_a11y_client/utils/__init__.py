@@ -1,14 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""UIA 유틸리티 패키지
-
-NVDA 패턴 적용:
-- COMError 핸들링 (safe_uia_call, handle_uia_errors)
-- UIA 신뢰도 판단 (is_good_uia_element, should_use_uia_for_window)
-- TTL 캐싱 (UIACache, message_list_cache)
-- 이벤트 핸들링 (FocusMonitor)
-- Workaround 시스템 (WORKAROUNDS)
-"""
+"""UIA 유틸리티. NVDA 패턴 (COMError 핸들링, 캐싱, 이벤트, Workaround)."""
 
 from .debug import get_logger, is_debug_enabled, LogLevel, set_global_level
 from .uia_utils import (

@@ -1,30 +1,18 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""
-디버그 모드 설정 관리
-
-사용:
-    from utils.debug_config import debug_config, init_debug_mode
-
-    if debug_config.enabled:
-        # 디버그 전용 로직
-"""
+"""디버그 모드 설정 관리. debug_config 전역 인스턴스 사용."""
 
 from dataclasses import dataclass, field
-from typing import Set
+from typing import Set, Optional, Any
 from pathlib import Path
 
 
 def _get_project_root() -> Path:
-    """프로젝트 루트 디렉토리 반환"""
-    # debug_config.py 위치: src/kakaotalk_a11y_client/utils/debug_config.py
-    # 프로젝트 루트: 4단계 상위
     return Path(__file__).parent.parent.parent.parent
 
 
 @dataclass
 class DebugConfig:
-    """디버그 모드 설정"""
 
     # 기본 설정
     enabled: bool = False
@@ -34,6 +22,12 @@ class DebugConfig:
     enable_inspector: bool = True
     enable_event_monitor: bool = False  # 기본 비활성 (오버헤드)
     enable_auto_dump: bool = True
+
+    # 이벤트 모니터 설정 (EventMonitorConfig 인스턴스)
+    event_monitor_config: Optional[Any] = None
+
+    # 권장 이벤트 제안 모드
+    enable_suggest_mode: bool = False
 
     # 자동 덤프 트리거 조건
     auto_dump_on_error: bool = True
@@ -65,13 +59,7 @@ def init_debug_mode(
     enabled: bool = True,
     **kwargs
 ) -> None:
-    """
-    디버그 모드 초기화
-
-    Args:
-        enabled: 디버그 모드 활성화
-        **kwargs: DebugConfig 필드 오버라이드
-    """
+    """디버그 모드 초기화. kwargs로 DebugConfig 필드 오버라이드 가능."""
     global debug_config
     debug_config.enabled = enabled
 

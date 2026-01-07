@@ -8,18 +8,11 @@ import pyautogui
 from pathlib import Path
 from typing import Optional
 
-from .config import TEMPLATE_DIR, EMOJIS, MATCH_THRESHOLD
+from .config import TEMPLATE_DIR, EMOJIS, MATCH_THRESHOLD, CV_NMS_THRESHOLD
 
 
 def capture_region(region: tuple[int, int, int, int]) -> np.ndarray:
-    """지정 영역을 캡처하여 OpenCV 이미지로 반환한다.
-
-    Args:
-        region: (left, top, right, bottom) 좌표
-
-    Returns:
-        BGR 형식의 numpy 배열
-    """
+    """pyautogui로 캡처 후 BGR numpy 배열 반환."""
     left, top, right, bottom = region
     width = right - left
     height = bottom - top
@@ -35,11 +28,7 @@ def capture_region(region: tuple[int, int, int, int]) -> np.ndarray:
 
 
 def load_templates() -> dict[int, tuple[str, np.ndarray]]:
-    """템플릿 이미지들을 로드한다.
-
-    Returns:
-        {emoji_id: (이름, 템플릿 이미지)} 딕셔너리
-    """
+    """TEMPLATE_DIR에서 이모지 PNG 로드. {id: (name, img)}"""
     templates = {}
 
     for emoji_id, info in EMOJIS.items():
@@ -57,16 +46,7 @@ def detect_emojis(
     templates: Optional[dict] = None,
     threshold: float = MATCH_THRESHOLD,
 ) -> list[dict]:
-    """이미지에서 이모지를 탐지한다.
-
-    Args:
-        image: 검색 대상 이미지 (BGR)
-        templates: 템플릿 딕셔너리 (None이면 자동 로드)
-        threshold: 매칭 임계값
-
-    Returns:
-        탐지된 이모지 리스트: [{"id": 1, "name": "하트", "pos": (x, y), "confidence": 0.95}, ...]
-    """
+    """템플릿 매칭 + NMS. 결과는 x좌표순 정렬."""
     if templates is None:
         templates = load_templates()
 
@@ -92,7 +72,7 @@ def detect_emojis(
         # NMS로 중복 제거
         if boxes:
             indices = cv2.dnn.NMSBoxes(
-                boxes, confidences, threshold, nms_threshold=0.3
+                boxes, confidences, threshold, nms_threshold=CV_NMS_THRESHOLD
             )
 
             # OpenCV 버전에 따라 indices 형식이 다름
@@ -121,14 +101,7 @@ def detect_emojis(
 
 
 def format_detection_result(detections: list[dict]) -> str:
-    """탐지 결과를 음성 출력용 문자열로 변환한다.
-
-    Args:
-        detections: detect_emojis() 반환값
-
-    Returns:
-        예: "하트, 엄지, 체크 발견. 1~3 숫자키로 선택"
-    """
+    """음성 출력용. 예: "하트, 엄지 발견. 1~2 숫자키로 선택" """
     if not detections:
         return "이모지 없음"
 

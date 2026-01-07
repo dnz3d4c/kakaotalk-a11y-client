@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""프로세스 잠금 모듈 - 중복 실행 방지 및 기존 프로세스 자동 종료
-
-msvcrt 파일 잠금 + PID 파일 병행:
-- msvcrt.locking(): 원자적 잠금으로 레이스 컨디션 방지
-- PID 파일: 기존 프로세스 종료 기능 지원
-"""
+"""프로세스 중복 실행 방지. msvcrt 잠금 + PID 파일 병행."""
 
 import os
 import sys
@@ -28,7 +23,6 @@ STILL_ACTIVE = 259  # GetExitCodeProcess 반환값
 
 
 class ProcessLock:
-    """msvcrt 파일 잠금 + PID 파일 기반 프로세스 잠금"""
 
     def __init__(self, name: str = "kakaotalk-a11y"):
         self.name = name
@@ -39,16 +33,10 @@ class ProcessLock:
         self._locked = False
 
     def acquire(self) -> bool:
-        """원자적 잠금 획득
-
-        Returns:
-            True: 잠금 성공 (새 인스턴스로 실행 가능)
-            False: 이미 다른 인스턴스가 실행 중
-        """
+        """잠금 획득. 성공 시 True, 다른 인스턴스 실행 중이면 False."""
         return self._try_acquire() or self._retry_after_stale_check()
 
     def _try_acquire(self) -> bool:
-        """잠금 획득 시도"""
         try:
             # 1. lock 파일 열기 (없으면 생성)
             self._file_handle = open(self.lock_file, 'w')
@@ -74,7 +62,6 @@ class ProcessLock:
             return False
 
     def _retry_after_stale_check(self) -> bool:
-        """stale 파일 확인 후 재시도"""
         # PID 파일로 실제 프로세스 확인
         if not self.pid_file.exists():
             # PID 파일 없으면 stale lock 파일
@@ -96,7 +83,6 @@ class ProcessLock:
             return self._try_acquire()
 
     def release(self) -> None:
-        """잠금 해제"""
         if self._file_handle and self._locked:
             # 1. 파일 잠금 해제
             try:
@@ -131,12 +117,7 @@ class ProcessLock:
         self._locked = False
 
     def terminate_existing(self) -> bool:
-        """기존 프로세스 종료 시도
-
-        Returns:
-            True: 종료 성공 또는 실행 중인 프로세스 없음
-            False: 종료 실패
-        """
+        """기존 프로세스 종료 시도. 성공/없음 시 True, 실패 시 False."""
         if not self.pid_file.exists():
             return True
 
@@ -158,10 +139,7 @@ class ProcessLock:
             return False
 
     def _is_process_running(self, pid: int) -> bool:
-        """프로세스가 실행 중인지 확인 (Windows)
-
-        OpenProcess + GetExitCodeProcess로 정확한 상태 확인.
-        """
+        """OpenProcess + GetExitCodeProcess로 프로세스 상태 확인."""
         try:
             handle = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
             if not handle:
@@ -180,10 +158,7 @@ class ProcessLock:
             return False
 
     def _terminate_process(self, pid: int) -> bool:
-        """프로세스 종료 (Windows)
-
-        taskkill 명령어 사용으로 확실한 종료 보장.
-        """
+        """taskkill로 프로세스 강제 종료."""
         import subprocess
 
         try:
@@ -217,7 +192,6 @@ class ProcessLock:
             return False
 
     def _terminate_process_fallback(self, pid: int) -> bool:
-        """프로세스 종료 대체 방법 (os.kill + TerminateProcess)"""
         try:
             import signal
             os.kill(pid, signal.SIGTERM)
@@ -242,7 +216,6 @@ class ProcessLock:
             return False
 
     def _cleanup_stale_files(self) -> None:
-        """stale 파일 정리"""
         try:
             self.pid_file.unlink(missing_ok=True)
         except OSError:
@@ -259,7 +232,7 @@ _lock_mutex = threading.Lock()
 
 
 def get_process_lock() -> ProcessLock:
-    """스레드 안전한 전역 ProcessLock 인스턴스 반환"""
+    """전역 싱글톤 인스턴스 반환 (스레드 안전)."""
     global _lock
     if _lock is None:
         with _lock_mutex:

@@ -65,7 +65,7 @@ class EmojiClicker:
         self.mouse_hook = MouseHook(lambda: self.focus_monitor.last_focused_name)
 
     def initialize(self) -> bool:
-        """초기화 - 템플릿 로드 및 핫키 등록"""
+        """템플릿 로드 및 핫키 등록. 실패 시 False."""
         # 1. 템플릿 이미지 로드
         self.templates = load_templates()
         if not self.templates:
@@ -80,7 +80,7 @@ class EmojiClicker:
         return True
 
     def on_scan(self) -> None:
-        """스캔 단축키 핸들러 (Ctrl+Shift+E)"""
+        """이모지 스캔 시작. 선택 모드 중이면 무시."""
         # 이미 선택 모드면 무시
         if self.mode_manager.in_selection_mode:
             return
@@ -125,7 +125,7 @@ class EmojiClicker:
             self.mode_manager.enter_selection_mode(self.hotkey_manager)
 
     def on_number_key(self, number: int) -> None:
-        """숫자키 핸들러 (1~4)"""
+        """이모지 선택. 선택 모드 아니면 무시."""
         if not self.mode_manager.in_selection_mode:
             return
 
@@ -147,22 +147,18 @@ class EmojiClicker:
         self._exit_selection_mode_internal()
 
     def on_cancel(self) -> None:
-        """취소 핸들러 (ESC)"""
+        """선택 모드 취소. 선택 모드 아니면 무시."""
         if self.mode_manager.in_selection_mode:
             announce_cancel()
             self._exit_selection_mode_internal()
 
     def _exit_selection_mode_internal(self) -> None:
-        """선택 모드 종료 (내부용)"""
+        """탐지 결과 초기화 후 선택 모드 종료."""
         self.current_detections = []
         self.mode_manager.exit_selection_mode(self.hotkey_manager)
 
     def run(self, use_gui: bool = True) -> None:
-        """메인 루프 실행
-
-        Args:
-            use_gui: GUI 모드 사용 여부 (기본값: True)
-        """
+        """메인 루프 실행. use_gui=False면 콘솔 모드."""
         log_path = get_log_file_path()
         if log_path:
             log.info(f"로그 파일: {log_path}")
@@ -190,7 +186,7 @@ class EmojiClicker:
             self._run_console_mode()
 
     def _run_console_mode(self) -> None:
-        """콘솔 모드 (기존 방식)"""
+        """콘솔 모드. Ctrl+C 또는 종료 핫키로 종료."""
         try:
             wait_for_exit()
         except KeyboardInterrupt:
@@ -199,7 +195,7 @@ class EmojiClicker:
             self.cleanup()
 
     def _run_gui_mode(self) -> None:
-        """GUI 모드 (wxPython 트레이 앱)"""
+        """GUI 모드. cleanup은 MainFrame.on_close에서 호출."""
         from .gui.app import KakaoA11yApp
 
         app = KakaoA11yApp(self)
@@ -207,7 +203,7 @@ class EmojiClicker:
         # cleanup은 MainFrame.on_close에서 호출됨
 
     def cleanup(self) -> None:
-        """정리 - 모든 리소스 해제"""
+        """모든 리소스 해제. 중복 호출 안전."""
         if hasattr(self, '_cleaned_up') and self._cleaned_up:
             return
         self._cleaned_up = True
@@ -236,7 +232,7 @@ _clicker_instance: Optional[EmojiClicker] = None
 
 
 def _cleanup_handler():
-    """atexit 핸들러 - 방어적 정리"""
+    """atexit 핸들러. 예외 발생해도 강제 진행."""
     global _clicker_instance
     if _clicker_instance:
         try:
@@ -248,13 +244,13 @@ def _cleanup_handler():
 
 
 def _signal_handler(signum, frame):
-    """시그널 핸들러"""
+    """SIGINT/SIGTERM 수신 시 종료."""
     log.debug(f"시그널 수신: {signum}")
     sys.exit(0)
 
 
 def parse_args():
-    """CLI 인자 파싱"""
+    """CLI 인자 파싱. --debug, --trace 등."""
     parser = argparse.ArgumentParser(
         description='카카오톡 접근성 클라이언트'
     )
@@ -274,8 +270,31 @@ def parse_args():
 
     parser.add_argument(
         '--debug-events',
+        nargs='?',
+        const='default',
+        default=None,
+        metavar='EVENTS',
+        help='이벤트 모니터 활성화. 값: all, focus, structure, property (콤마 조합 가능)'
+    )
+
+    parser.add_argument(
+        '--debug-events-filter',
+        default=None,
+        metavar='TYPES',
+        help='이벤트 필터: ControlType 콤마 구분 (예: ListItemControl,MenuItemControl)'
+    )
+
+    parser.add_argument(
+        '--debug-events-format',
+        choices=['console', 'json', 'table'],
+        default='console',
+        help='이벤트 출력 형식 (기본: console)'
+    )
+
+    parser.add_argument(
+        '--debug-events-suggest',
         action='store_true',
-        help='이벤트 모니터 활성화 (오버헤드 주의)'
+        help='권장 이벤트 제안 모드 (포커스 요소별 권장 이벤트 출력)'
     )
 
     parser.add_argument(
@@ -300,12 +319,7 @@ def parse_args():
 
 
 def main() -> int:
-    """진입점
-
-    Returns:
-        0: 정상 종료
-        1: 오류 종료
-    """
+    """진입점. 0=정상, 1=오류."""
     global _clicker_instance
 
     # CLI 인자 파싱
@@ -325,9 +339,22 @@ def main() -> int:
             set_global_level(LogLevel.DEBUG)
             print("[DEBUG] 디버그 모드 활성화")
         init_profiler(enabled=True)
+
+        # 이벤트 모니터 설정 생성
+        event_monitor_config = None
+        if args.debug_events is not None:
+            from .utils.event_monitor import EventMonitorConfig
+            event_monitor_config = EventMonitorConfig.from_cli_args(
+                events_arg=args.debug_events if args.debug_events != 'default' else None,
+                filter_arg=args.debug_events_filter,
+                format_arg=args.debug_events_format,
+            )
+
         init_debug_mode(
             enabled=True,
-            enable_event_monitor=args.debug_events,
+            enable_event_monitor=args.debug_events is not None,
+            event_monitor_config=event_monitor_config,
+            enable_suggest_mode=args.debug_events_suggest,
         )
     elif args.debug_profile:
         init_profiler(enabled=True)

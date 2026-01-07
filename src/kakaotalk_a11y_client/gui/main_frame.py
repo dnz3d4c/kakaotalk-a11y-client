@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class MainFrame(wx.Frame):
-    """숨겨진 메인 프레임 (wx.App 유지용, 설정 다이얼로그 호스트)"""
+    """숨겨진 메인 프레임. 트레이 아이콘과 설정 다이얼로그의 부모 역할."""
 
     def __init__(self, clicker: "EmojiClicker"):
         super().__init__(
@@ -33,7 +33,7 @@ class MainFrame(wx.Frame):
         self.Hide()
 
     def show_settings_dialog(self) -> None:
-        """설정 다이얼로그 표시"""
+        """설정 다이얼로그 모달로 표시. 이미 열려있으면 포커스."""
         from .settings_dialog import SettingsDialog
 
         # 이미 열려있으면 포커스
@@ -47,11 +47,7 @@ class MainFrame(wx.Frame):
         self._settings_dialog = None
 
     def check_for_update(self, manual: bool = False) -> None:
-        """업데이트 확인.
-
-        Args:
-            manual: 수동 확인 여부 (트레이 메뉴에서 호출 시 True)
-        """
+        """업데이트 확인. manual=True면 결과 없을 때도 메시지박스 표시."""
         from ..updater import check_for_update, is_frozen
         from .update_dialogs import run_update_flow, show_update_available
 
@@ -82,7 +78,7 @@ class MainFrame(wx.Frame):
             run_update_flow(self, info)
 
     def on_close(self, event: wx.CloseEvent) -> None:
-        """창 닫기 처리"""
+        """CanVeto이면 숨기기, 아니면 트레이/리소스 정리 후 종료."""
         if event.CanVeto():
             # 일반 닫기 요청 → 숨기기
             self.Hide()

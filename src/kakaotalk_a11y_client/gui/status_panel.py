@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""상태 표시 패널
-
-현재 모드, 채팅방 상태, 통계 표시.
-wx.Timer로 실시간 업데이트.
-"""
+"""상태 표시 패널. 모드/채팅방 상태/통계를 실시간 업데이트."""
 
 import wx
 from typing import TYPE_CHECKING
@@ -14,10 +10,9 @@ if TYPE_CHECKING:
 
 
 class StatusPanel(wx.Panel):
-    """상태 표시 패널 - 실시간 업데이트"""
+    """상태 표시 패널. 500ms 간격으로 clicker 상태 반영."""
 
-    # 업데이트 간격 (ms)
-    UPDATE_INTERVAL = 500
+    UPDATE_INTERVAL = 500  # ms
 
     def __init__(self, parent: wx.Window, clicker: "EmojiClicker"):
         super().__init__(parent)
@@ -27,7 +22,6 @@ class StatusPanel(wx.Panel):
         self._start_timer()
 
     def _create_ui(self) -> None:
-        """UI 생성"""
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # 현재 상태 섹션
@@ -78,17 +72,14 @@ class StatusPanel(wx.Panel):
         self.SetSizer(main_sizer)
 
     def _start_timer(self) -> None:
-        """타이머 시작"""
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self._on_timer, self.timer)
         self.timer.Start(self.UPDATE_INTERVAL)
 
     def _on_timer(self, event: wx.TimerEvent) -> None:
-        """타이머 이벤트 - 상태 업데이트"""
         self._update_status()
 
     def _update_status(self) -> None:
-        """상태 업데이트"""
         # 모드 표시
         if self.clicker.mode_manager.in_selection_mode:
             mode = "이모지 선택"
@@ -122,6 +113,6 @@ class StatusPanel(wx.Panel):
         self.message_count_label.SetLabel(f"{message_count}개")
 
     def stop_timer(self) -> None:
-        """타이머 정지 (패널 닫을 때)"""
+        """패널 닫을 때 타이머 정리."""
         if hasattr(self, 'timer') and self.timer.IsRunning():
             self.timer.Stop()

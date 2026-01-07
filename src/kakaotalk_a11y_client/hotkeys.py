@@ -27,13 +27,11 @@ HOTKEY_ID_NUM1 = 3
 HOTKEY_ID_NUM2 = 4
 HOTKEY_ID_NUM3 = 5
 HOTKEY_ID_NUM4 = 6
-HOTKEY_ID_NAV_REREAD = 11
 HOTKEY_ID_EXIT = 20  # Win+Ctrl+K 종료
 
 # 핫키 ID와 설정 키 매핑
 HOTKEY_CONFIG_MAP = {
     HOTKEY_ID_SCAN: "scan",
-    HOTKEY_ID_NAV_REREAD: "reread",
     HOTKEY_ID_EXIT: "exit",
 }
 
@@ -45,7 +43,7 @@ VK_4 = 0x34
 
 
 def _get_modifiers(mod_list: list[str]) -> int:
-    """문자열 리스트를 modifier 비트로 변환"""
+    """["ctrl", "shift"] -> MOD_CONTROL | MOD_SHIFT"""
     result = 0
     for mod in mod_list:
         mod_lower = mod.lower()
@@ -61,7 +59,7 @@ def _get_modifiers(mod_list: list[str]) -> int:
 
 
 def _get_vk(key: str) -> int:
-    """키 문자열을 VK 코드로 변환"""
+    """"E" -> 0x45, "F1" -> 0x70"""
     key = key.upper()
     # 단일 알파벳
     if len(key) == 1 and key.isalpha():
@@ -103,25 +101,19 @@ class HotkeyManager:
         self._cleanup_event = threading.Event()
 
     def register_scan_hotkey(self, callback: Callable) -> None:
-        """스캔 단축키 콜백 저장 (Ctrl+Shift+E)"""
         self._callbacks[HOTKEY_ID_SCAN] = callback
 
     def register_cancel_hotkey(self, callback: Callable) -> None:
-        """취소 단축키 콜백 저장 (ESC)"""
         self._callbacks[HOTKEY_ID_CANCEL] = callback
 
     def register_number_keys(self, callback: Callable) -> None:
-        """숫자키 1~4 콜백 저장"""
+        """callback(number) 형태로 호출됨."""
         for i in range(1, 5):
             hotkey_id = HOTKEY_ID_NUM1 + (i - 1)
             self._callbacks[hotkey_id] = lambda num=i: callback(num)
 
-    def register_reread_hotkey(self, callback: Callable) -> None:
-        """다시 읽기 핫키 콜백 저장 (Ctrl+Shift+S)"""
-        self._callbacks[HOTKEY_ID_NAV_REREAD] = callback
-
     def enable_selection_mode(self) -> None:
-        """선택 모드 활성화 - ESC, 숫자키 핫키 등록"""
+        """숫자키 1~4 핫키 등록. PostThreadMessage로 메시지 루프에 전달."""
         if self._selection_mode_active:
             return
         if not self._thread_id:
@@ -136,7 +128,7 @@ class HotkeyManager:
         self._selection_mode_active = True
 
     def disable_selection_mode(self) -> None:
-        """선택 모드 비활성화 - ESC, 숫자키 핫키 해제"""
+        """숫자키 1~4 핫키 해제."""
         if not self._selection_mode_active:
             return
         if not self._thread_id:
@@ -151,13 +143,13 @@ class HotkeyManager:
         self._selection_mode_active = False
 
     def start(self) -> None:
-        """메시지 루프 시작 (별도 스레드)"""
+        """메시지 루프 스레드 시작. RegisterHotKey는 루프 내에서 실행."""
         self._running = True
         self._thread = threading.Thread(target=self._message_loop, daemon=True)
         self._thread.start()
 
     def _message_loop(self) -> None:
-        """Windows 메시지 루프 - 핫키 이벤트 처리"""
+        """핫키 등록 + WM_HOTKEY 처리. 콜백은 별도 스레드에서 실행."""
         from .settings import get_settings
 
         self._thread_id = ctypes.windll.kernel32.GetCurrentThreadId()
@@ -210,35 +202,30 @@ class HotkeyManager:
 
         # 정리
         user32.UnregisterHotKey(None, HOTKEY_ID_SCAN)
-        user32.UnregisterHotKey(None, HOTKEY_ID_NAV_REREAD)
         user32.UnregisterHotKey(None, HOTKEY_ID_EXIT)
 
     def _register_selection_hotkeys(self) -> None:
-        """선택 모드 핫키 등록"""
         user32.RegisterHotKey(None, HOTKEY_ID_NUM1, 0, VK_1)
         user32.RegisterHotKey(None, HOTKEY_ID_NUM2, 0, VK_2)
         user32.RegisterHotKey(None, HOTKEY_ID_NUM3, 0, VK_3)
         user32.RegisterHotKey(None, HOTKEY_ID_NUM4, 0, VK_4)
 
     def _unregister_selection_hotkeys(self) -> None:
-        """선택 모드 핫키 해제"""
         user32.UnregisterHotKey(None, HOTKEY_ID_NUM1)
         user32.UnregisterHotKey(None, HOTKEY_ID_NUM2)
         user32.UnregisterHotKey(None, HOTKEY_ID_NUM3)
         user32.UnregisterHotKey(None, HOTKEY_ID_NUM4)
 
     def _unregister_all_hotkeys(self) -> None:
-        """모든 핫키 일괄 해제"""
         if self._selection_mode_active:
             self._unregister_selection_hotkeys()
             self._selection_mode_active = False
 
         user32.UnregisterHotKey(None, HOTKEY_ID_SCAN)
         user32.UnregisterHotKey(None, HOTKEY_ID_EXIT)
-        user32.UnregisterHotKey(None, HOTKEY_ID_NAV_REREAD)
 
     def cleanup(self) -> None:
-        """모든 핫키 해제 및 스레드 종료"""
+        """핫키 해제 + WM_QUIT 전송. 최대 2초 대기."""
         if not self._thread_id:
             return
 
@@ -265,7 +252,7 @@ class HotkeyManager:
 
 
 def wait_for_exit() -> None:
-    """프로그램 종료까지 대기 (Win+Ctrl+K 또는 Ctrl+C)"""
+    """무한 대기. KeyboardInterrupt 발생 시 반환."""
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

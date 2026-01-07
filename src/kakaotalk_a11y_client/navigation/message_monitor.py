@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""새 메시지 자동 읽기 모듈
-
-채팅방에서 새 메시지가 오면 자동으로 읽어주는 기능.
-UIA StructureChanged 이벤트 기반으로 동작.
-"""
+"""새 메시지 자동 읽기. UIA StructureChanged 이벤트 기반."""
 
 from typing import Optional, TYPE_CHECKING
 
 from ..accessibility import speak
-from ..config import SEARCH_DEPTH_MESSAGE_LIST
+from ..config import (
+    SEARCH_DEPTH_MESSAGE_LIST,
+    SEARCH_MAX_SECONDS_LIST,
+    SEARCH_MAX_SECONDS_FALLBACK,
+)
 from ..utils.debug import get_logger
 from ..utils.uia_utils import get_children_recursive
 from ..utils.uia_events import MessageListMonitor, MessageEvent
@@ -21,14 +21,9 @@ log = get_logger("MessageMonitor")
 
 
 class MessageMonitor:
-    """새 메시지 모니터링 클래스 (UIA 이벤트 기반)"""
+    """새 메시지 모니터링. UIA 이벤트 핸들러 기반."""
 
     def __init__(self, chat_navigator: "ChatRoomNavigator"):
-        """초기화
-
-        Args:
-            chat_navigator: 채팅방 탐색기 참조
-        """
         self.chat_navigator = chat_navigator
 
         # 실행 상태
@@ -41,14 +36,7 @@ class MessageMonitor:
         log.debug("MessageMonitor 초기화")
 
     def start(self, hwnd: int) -> bool:
-        """모니터링 시작
-
-        Args:
-            hwnd: 채팅방 창 핸들
-
-        Returns:
-            시작 성공 여부
-        """
+        """이벤트 모니터 시작. 이미 실행 중이면 True 반환."""
         if self._running:
             log.trace("MessageMonitor 이미 실행 중")
             return True
@@ -69,7 +57,6 @@ class MessageMonitor:
         return False
 
     def stop(self):
-        """모니터링 중지"""
         log.debug("MessageMonitor 중지 요청")
         self._running = False
 
@@ -82,39 +69,27 @@ class MessageMonitor:
         log.info("MessageMonitor 중지 완료")
 
     def pause(self):
-        """이벤트 처리 일시 중지 (핸들러 유지, COM 재등록 없음)
-
-        팝업메뉴 열릴 때 호출. stop/start 대신 사용하여 CPU 스파이크 방지.
-        """
+        """팝업메뉴 열릴 때 호출. COM 재등록 없이 이벤트만 무시."""
         if self._list_monitor:
             self._list_monitor.pause()
             log.debug("MessageMonitor 일시 중지")
 
     def resume(self):
-        """이벤트 처리 재개
-
-        팝업메뉴 닫힐 때 호출.
-        """
+        """팝업메뉴 닫힐 때 호출. 이벤트 처리 재개."""
         if self._list_monitor:
             self._list_monitor.resume()
             log.debug("MessageMonitor 재개")
 
     def is_running(self) -> bool:
-        """실행 중인지 확인"""
         return self._running
 
     def is_paused(self) -> bool:
-        """일시 중지 상태인지 확인"""
         if self._list_monitor:
             return self._list_monitor.is_paused
         return False
 
     def _start_event_mode(self) -> bool:
-        """이벤트 모드 시작 (MessageListMonitor 사용)
-
-        Returns:
-            성공 여부
-        """
+        """MessageListMonitor 생성 및 시작."""
         if not self.chat_navigator.chat_control:
             log.warning("chat_control 없음, 이벤트 모드 실패")
             return False
@@ -126,7 +101,7 @@ class MessageMonitor:
                 searchDepth=SEARCH_DEPTH_MESSAGE_LIST
             )
 
-            if not msg_list.Exists(maxSearchSeconds=0.5):
+            if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_LIST):
                 log.warning("메시지 목록 없음, 이벤트 모드 실패")
                 return False
 
@@ -141,11 +116,7 @@ class MessageMonitor:
             return False
 
     def _on_message_event(self, event: MessageEvent):
-        """MessageListMonitor 콜백: 새 메시지 감지됨
-
-        Args:
-            event: 메시지 이벤트 (new_count, timestamp, source, children)
-        """
+        """새 메시지 감지 시 호출. 로드 후 TTS 발화."""
         log.debug(f"메시지 이벤트: new_count={event.new_count}, source={event.source}")
 
         if not self.chat_navigator.is_active:
@@ -159,15 +130,7 @@ class MessageMonitor:
             self._announce_new_messages(new_messages)
 
     def _load_new_messages(self, count: int, children: list = None) -> list:
-        """새 메시지 로드
-
-        Args:
-            count: 새 메시지 개수
-            children: 이벤트에서 전달받은 children (GetChildren 이중 호출 방지)
-
-        Returns:
-            새 메시지 리스트
-        """
+        """children 전달 시 직접 사용, 없으면 UIA 조회 (폴백)."""
         if not self.chat_navigator.chat_control:
             return []
 
@@ -185,7 +148,7 @@ class MessageMonitor:
                 searchDepth=SEARCH_DEPTH_MESSAGE_LIST
             )
 
-            if not msg_list.Exists(maxSearchSeconds=0.3):
+            if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_FALLBACK):
                 return []
 
             messages = get_children_recursive(msg_list, max_depth=2, filter_empty=True)
@@ -201,11 +164,7 @@ class MessageMonitor:
             return []
 
     def _announce_new_messages(self, new_messages: list):
-        """새 메시지 읽기
-
-        Args:
-            new_messages: 새 메시지 리스트
-        """
+        """시스템 메시지 필터링 후 TTS 발화. interrupt=False로 큐 누적."""
         if not new_messages:
             return
 
@@ -234,14 +193,7 @@ class MessageMonitor:
             log.debug(f"총 {announced_count}개 메시지 발화 완료")
 
     def _is_system_message(self, text: str) -> bool:
-        """시스템 메시지인지 확인
-
-        Args:
-            text: 메시지 텍스트
-
-        Returns:
-            시스템 메시지면 True
-        """
+        """'읽지 않은 메시지', '님이 들어왔습니다' 등 시스템 메시지 필터링."""
         system_patterns = [
             "읽지 않은 메시지",
             "님이 들어왔습니다",
@@ -255,7 +207,6 @@ class MessageMonitor:
         return False
 
     def get_stats(self) -> dict:
-        """모니터 상태 반환"""
         stats = {
             "running": self._running,
             "mode": "event",

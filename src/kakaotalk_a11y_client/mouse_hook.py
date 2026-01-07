@@ -31,10 +31,6 @@ class MouseHook:
     """Low-Level 마우스 훅 - 비메시지 항목 우클릭 차단"""
 
     def __init__(self, get_last_focused_name: Callable[[], Optional[str]]):
-        """
-        Args:
-            get_last_focused_name: 마지막 포커스된 ListItemControl 이름 반환 콜백
-        """
         self._get_last_focused_name = get_last_focused_name
         self._hook_id = None
 
@@ -48,14 +44,13 @@ class MouseHook:
         self._hook_proc = self._HOOKPROC(self._mouse_callback)
 
     def _is_non_message_item(self, name: str) -> bool:
-        """팝업메뉴를 차단해야 하는 비메시지 항목인지 확인"""
         for pattern in NON_MESSAGE_PATTERNS:
             if pattern in name:
                 return True
         return False
 
     def _mouse_callback(self, nCode: int, wParam: int, lParam: int) -> int:
-        """마우스 이벤트 콜백"""
+        """비메시지 항목 우클릭 시 1 반환(차단)."""
         if nCode >= 0 and wParam == WM_RBUTTONDOWN:
             # 우클릭 감지 → 비메시지 항목이면 차단
             last_name = self._get_last_focused_name()
@@ -68,11 +63,7 @@ class MouseHook:
         return user32.CallNextHookEx(self._hook_id, nCode, wParam, lParam)
 
     def install(self) -> bool:
-        """훅 설치
-
-        Returns:
-            성공 시 True
-        """
+        """SetWindowsHookExW 호출. 이미 설치됐으면 True 반환."""
         if self._hook_id:
             return True  # 이미 설치됨
 
@@ -91,7 +82,6 @@ class MouseHook:
             return False
 
     def uninstall(self) -> None:
-        """훅 해제"""
         if self._hook_id:
             user32.UnhookWindowsHookEx(self._hook_id)
             self._hook_id = None

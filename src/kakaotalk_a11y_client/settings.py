@@ -17,8 +17,15 @@ log = get_logger("Settings")
 DEFAULT_SETTINGS = {
     "hotkeys": {
         "scan": {"modifiers": ["ctrl", "shift"], "key": "E"},
-        "reread": {"modifiers": ["ctrl", "shift"], "key": "S"},
         "exit": {"modifiers": ["win", "ctrl"], "key": "K"},
+    },
+    "debug_hotkeys": {
+        "dump": {"modifiers": ["ctrl", "shift"], "key": "D"},
+        "profile": {"modifiers": ["ctrl", "shift"], "key": "P"},
+        "event_monitor": {"modifiers": ["ctrl", "shift"], "key": "R"},
+        "status": {"modifiers": ["ctrl", "shift"], "key": "S"},
+        "test_navigation": {"modifiers": ["ctrl", "shift"], "key": "1"},
+        "test_message": {"modifiers": ["ctrl", "shift"], "key": "2"},
     },
     "ui": {
         "window_size": [500, 400],
@@ -35,8 +42,17 @@ DEFAULT_SETTINGS = {
 # 핫키 이름 매핑 (UI 표시용)
 HOTKEY_NAMES = {
     "scan": "이모지 스캔",
-    "reread": "다시 읽기",
     "exit": "프로그램 종료",
+}
+
+# 디버그 핫키 이름 매핑 (UI 표시용)
+DEBUG_HOTKEY_NAMES = {
+    "dump": "즉시 덤프",
+    "profile": "프로파일 요약",
+    "event_monitor": "이벤트 모니터 토글",
+    "status": "디버그 상태 확인",
+    "test_navigation": "탐색 테스트",
+    "test_message": "메시지 테스트",
 }
 
 
@@ -49,7 +65,6 @@ class Settings:
         self._load()
 
     def _load(self) -> None:
-        """설정 파일 로드"""
         if self.path.exists():
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
@@ -65,21 +80,19 @@ class Settings:
         self._merge_defaults()
 
     def _merge_defaults(self) -> None:
-        """기본값과 병합"""
         self._data = self._deep_merge(DEFAULT_SETTINGS, self._data)
 
     def _deep_merge(self, base: dict, override: dict) -> dict:
-        """딥 머지: base를 override로 덮어쓰기"""
-        result = base.copy()
+        import copy
+        result = copy.deepcopy(base)
         for key, value in override.items():
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._deep_merge(result[key], value)
             else:
-                result[key] = value
+                result[key] = copy.deepcopy(value)
         return result
 
     def save(self) -> bool:
-        """설정 파일 저장"""
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.path, "w", encoding="utf-8") as f:
@@ -91,10 +104,7 @@ class Settings:
             return False
 
     def get(self, key: str, default: Any = None) -> Any:
-        """설정값 가져오기 (점 표기법 지원)
-
-        예: settings.get("hotkeys.scan.key")
-        """
+        """점 표기법: "hotkeys.scan.key" """
         keys = key.split(".")
         value = self._data
         for k in keys:
@@ -105,10 +115,7 @@ class Settings:
         return value
 
     def set(self, key: str, value: Any) -> None:
-        """설정값 저장 (점 표기법 지원)
-
-        예: settings.set("hotkeys.scan.key", "F")
-        """
+        """점 표기법: "hotkeys.scan.key" """
         keys = key.split(".")
         data = self._data
         for k in keys[:-1]:
@@ -118,37 +125,42 @@ class Settings:
         data[keys[-1]] = value
 
     def get_hotkey(self, name: str) -> Optional[dict]:
-        """핫키 설정 가져오기"""
         return self.get(f"hotkeys.{name}")
 
     def set_hotkey(self, name: str, modifiers: list[str], key: str) -> None:
-        """핫키 설정 저장"""
         self.set(f"hotkeys.{name}", {"modifiers": modifiers, "key": key})
 
     def get_all_hotkeys(self) -> dict:
-        """모든 핫키 설정 가져오기"""
         return self.get("hotkeys", {})
 
     def reset_hotkeys(self) -> None:
-        """핫키 설정 초기화"""
         self._data["hotkeys"] = DEFAULT_SETTINGS["hotkeys"].copy()
 
+    def get_debug_hotkey(self, name: str) -> Optional[dict]:
+        return self.get(f"debug_hotkeys.{name}")
+
+    def set_debug_hotkey(self, name: str, modifiers: list[str], key: str) -> None:
+        self.set(f"debug_hotkeys.{name}", {"modifiers": modifiers, "key": key})
+
+    def get_all_debug_hotkeys(self) -> dict:
+        return self.get("debug_hotkeys", {})
+
+    def reset_debug_hotkeys(self) -> None:
+        import copy
+        self._data["debug_hotkeys"] = copy.deepcopy(DEFAULT_SETTINGS["debug_hotkeys"])
+
     def increment_stat(self, name: str) -> None:
-        """통계 증가"""
         current = self.get(f"stats.{name}", 0)
         self.set(f"stats.{name}", current + 1)
 
     def get_last_update_check(self) -> float:
-        """마지막 업데이트 체크 시간(timestamp) 반환"""
         return self.get("update.last_check_timestamp", 0)
 
     def set_last_update_check(self, timestamp: float) -> None:
-        """마지막 업데이트 체크 시간 저장"""
         self.set("update.last_check_timestamp", timestamp)
 
     @property
     def data(self) -> dict:
-        """전체 설정 데이터"""
         return self._data
 
 
@@ -157,7 +169,6 @@ _settings_instance: Optional[Settings] = None
 
 
 def get_settings() -> Settings:
-    """설정 싱글톤 인스턴스 가져오기"""
     global _settings_instance
     if _settings_instance is None:
         _settings_instance = Settings()

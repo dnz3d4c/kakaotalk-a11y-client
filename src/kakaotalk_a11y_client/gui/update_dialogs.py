@@ -17,15 +17,7 @@ log = get_logger("UpdateDialogs")
 
 
 def show_update_available(parent: "MainFrame", info: UpdateInfo) -> bool:
-    """새 버전 알림 대화상자.
-
-    Args:
-        parent: 부모 프레임
-        info: 업데이트 정보
-
-    Returns:
-        사용자가 업데이트를 원하면 True
-    """
+    """새 버전 알림. 사용자가 예 선택 시 True."""
     msg = (
         f"새 버전이 있습니다.\n\n"
         f"현재 버전: {info.current_version}\n"
@@ -46,7 +38,7 @@ def show_update_available(parent: "MainFrame", info: UpdateInfo) -> bool:
 
 
 class ReleaseNotesDialog(wx.Dialog):
-    """릴리스 노트 표시 대화상자"""
+    """릴리스 노트 표시. 업데이트 버튼으로 진행."""
 
     def __init__(self, parent: wx.Window, info: UpdateInfo):
         super().__init__(
@@ -83,15 +75,7 @@ class ReleaseNotesDialog(wx.Dialog):
 
 
 def show_release_notes(parent: "MainFrame", info: UpdateInfo) -> bool:
-    """릴리스 노트 대화상자 표시.
-
-    Args:
-        parent: 부모 프레임
-        info: 업데이트 정보
-
-    Returns:
-        사용자가 업데이트를 원하면 True
-    """
+    """릴리스 노트 표시. 사용자가 업데이트 선택 시 True."""
     dlg = ReleaseNotesDialog(parent, info)
     result = dlg.ShowModal() == wx.ID_OK
     dlg.Destroy()
@@ -99,7 +83,7 @@ def show_release_notes(parent: "MainFrame", info: UpdateInfo) -> bool:
 
 
 class DownloadProgressDialog(wx.Dialog):
-    """다운로드 진행률 대화상자"""
+    """다운로드 진행률 표시. 취소 가능."""
 
     def __init__(self, parent: wx.Window, info: UpdateInfo):
         super().__init__(
@@ -143,7 +127,7 @@ class DownloadProgressDialog(wx.Dialog):
         self.cancel_btn.Enable(False)
 
     def _progress_callback(self, downloaded: int, total: int) -> bool:
-        """다운로드 진행률 콜백 (워커 스레드에서 호출)."""
+        """워커 스레드에서 호출. False 반환 시 다운로드 취소."""
         if self.cancelled:
             return False
 
@@ -162,7 +146,7 @@ class DownloadProgressDialog(wx.Dialog):
         return True
 
     def start_download(self) -> None:
-        """다운로드 시작."""
+        """백그라운드 스레드에서 다운로드 시작."""
         self.status_label.SetLabel(f"버전 {self.info.version} 다운로드 중...")
 
         def download_worker():
@@ -180,7 +164,7 @@ class DownloadProgressDialog(wx.Dialog):
         thread.start()
 
     def _on_download_complete(self) -> None:
-        """다운로드 완료 처리."""
+        """결과에 따라 OK/CANCEL/ABORT로 모달 종료."""
         if self.cancelled:
             cleanup()
             self.EndModal(wx.ID_CANCEL)
@@ -191,15 +175,7 @@ class DownloadProgressDialog(wx.Dialog):
 
 
 def run_download(parent: "MainFrame", info: UpdateInfo) -> Optional[str]:
-    """다운로드 실행.
-
-    Args:
-        parent: 부모 프레임
-        info: 업데이트 정보
-
-    Returns:
-        다운로드된 zip 경로 또는 None (취소/실패)
-    """
+    """다운로드 다이얼로그 표시. 성공 시 zip 경로, 실패/취소 시 None."""
     dlg = DownloadProgressDialog(parent, info)
 
     # 다운로드 시작 후 대화상자 표시
@@ -224,14 +200,7 @@ def run_download(parent: "MainFrame", info: UpdateInfo) -> Optional[str]:
 
 
 def confirm_restart(parent: "MainFrame") -> bool:
-    """재시작 확인 대화상자.
-
-    Args:
-        parent: 부모 프레임
-
-    Returns:
-        재시작하면 True
-    """
+    """재시작 확인. 예 선택 시 True."""
     dlg = wx.MessageDialog(
         parent,
         "다운로드가 완료되었습니다.\n\n"
@@ -246,12 +215,7 @@ def confirm_restart(parent: "MainFrame") -> bool:
 
 
 def run_update_flow(parent: "MainFrame", info: UpdateInfo) -> None:
-    """전체 업데이트 흐름 실행.
-
-    Args:
-        parent: 부모 프레임
-        info: 업데이트 정보
-    """
+    """릴리스 노트 -> 다운로드 -> 재시작 확인 -> 업데이트 적용 순서로 진행."""
     # 1. 릴리스 노트 표시
     if not show_release_notes(parent, info):
         log.info("사용자가 업데이트 취소")

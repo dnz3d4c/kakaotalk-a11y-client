@@ -1,53 +1,43 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""채팅방 내부 메시지 목록 관리 모듈
+"""채팅방 메시지 목록 관리. UIAAdapter 사용으로 UIA 직접 호출 제거."""
 
-NVDA 패턴 적용:
-- TTL 캐싱 (message_list_cache)
-- safe_uia_call로 COMError 처리
-"""
-
-from typing import Any, Optional
-
-import uiautomation as auto
-import pythoncom
+from typing import Any, List, Optional, TYPE_CHECKING
 
 from ..config import SEARCH_DEPTH_MESSAGE_LIST
-from ..window_finder import KAKAOTALK_LIST_CLASS
 from ..utils.debug_tools import debug_tools
 from ..utils.uia_cache import message_list_cache
-from ..utils.uia_utils import safe_uia_call
+
+if TYPE_CHECKING:
+    from ..infrastructure.uia_adapter import UIAAdapter
 
 
 class ChatRoomNavigator:
-    """채팅방 내부 메시지 목록 관리 클래스
+    """채팅방 메시지 목록 관리. MessageMonitor에서 참조."""
 
-    MessageMonitor에서 메시지 변화 감지용으로 사용.
-    """
+    def __init__(self, uia_adapter: Optional["UIAAdapter"] = None):
+        """
+        Args:
+            uia_adapter: UIA 접근 어댑터. None이면 기본 싱글톤 사용.
+        """
+        from ..infrastructure.uia_adapter import get_default_uia_adapter
+        self._uia = uia_adapter or get_default_uia_adapter()
 
-    def __init__(self):
-        self.messages: list[auto.Control] = []
-        self.chat_control: Optional[auto.Control] = None
-        self.list_control: Optional[auto.Control] = None  # 메시지 목록 ListControl
+        self.messages: List[Any] = []
+        self.chat_control: Optional[Any] = None
+        self.list_control: Optional[Any] = None  # 메시지 목록 ListControl
         self.is_active: bool = False
         self._hwnd: int = 0  # 캐시 키용 창 핸들
         self._current_focused_item: Optional[Any] = None  # 현재 포커스된 메시지 (컨텍스트 메뉴용)
 
     def enter_chat_room(self, hwnd: int) -> bool:
-        """채팅방 진입, 메시지 목록 로드
-
-        Args:
-            hwnd: 채팅방 창 핸들
-
-        Returns:
-            성공 여부
-        """
+        """채팅방 진입. COM 초기화 후 메시지 목록 로드."""
         try:
-            # 스레드에서 UIA 사용 시 COM 초기화 필요
-            pythoncom.CoInitialize()
+            # COM 초기화 (Adapter가 스레드별 관리)
+            self._uia.init_com()
 
             self._hwnd = hwnd  # 캐시 키용 저장
-            self.chat_control = auto.ControlFromHandle(hwnd)
+            self.chat_control = self._uia.get_control_from_handle(hwnd)
             if not self.chat_control:
                 return False
 
@@ -61,37 +51,27 @@ class ChatRoomNavigator:
             return False
 
     def exit_chat_room(self):
-        """채팅방 나가기"""
+        """상태 초기화 및 COM 해제."""
         self.is_active = False
         self.messages = []
         self.chat_control = None
         self.list_control = None
         self._hwnd = 0
         self._current_focused_item = None
-        try:
-            pythoncom.CoUninitialize()
-        except Exception:
-            pass  # 이미 해제된 경우 무시
+        # COM 해제 (Adapter가 스레드별 관리)
+        self._uia.uninit_com()
 
     @property
     def current_focused_item(self) -> Optional[Any]:
-        """현재 포커스된 메시지 항목 (컨텍스트 메뉴용)"""
+        """컨텍스트 메뉴 표시용 포커스 메시지."""
         return self._current_focused_item
 
     @current_focused_item.setter
     def current_focused_item(self, item: Optional[Any]):
-        """현재 포커스된 메시지 항목 설정"""
         self._current_focused_item = item
 
     def refresh_messages(self, use_cache: bool = True) -> bool:
-        """메시지 목록 새로고침 (NVDA 패턴: TTL 캐싱 적용)
-
-        Args:
-            use_cache: 캐시 사용 여부 (기본 True)
-
-        Returns:
-            성공 여부
-        """
+        """메시지 목록 새로고침. hwnd 기반 TTL 캐시 사용."""
         if not self.chat_control:
             return False
 
@@ -106,25 +86,20 @@ class ChatRoomNavigator:
                         return len(self.messages) > 0
 
                 # 채팅방 내 메시지 리스트 찾기
-                msg_list = safe_uia_call(
-                    lambda: self.chat_control.ListControl(Name="메시지", searchDepth=SEARCH_DEPTH_MESSAGE_LIST),
-                    default=None,
-                    error_msg="메시지 리스트 찾기"
+                msg_list = self._uia.find_list_control(
+                    self.chat_control,
+                    name="메시지",
+                    search_depth=SEARCH_DEPTH_MESSAGE_LIST
                 )
 
-                if not msg_list or not msg_list.Exists(maxSearchSeconds=1):
+                if not msg_list or not self._uia.control_exists(msg_list, max_seconds=1.0):
                     return False
 
                 # 메시지 목록 참조 저장
                 self.list_control = msg_list
 
-                # 메시지 항목들 가져오기 (safe_uia_call + 필터링)
-                from ..utils.uia_utils import get_children_recursive
-                messages = safe_uia_call(
-                    lambda: get_children_recursive(msg_list, max_depth=2, filter_empty=True),
-                    default=[],
-                    error_msg="메시지 항목 가져오기"
-                )
+                # 메시지 항목들 가져오기
+                messages = self._uia.get_children(msg_list, max_depth=2, filter_empty=True)
 
                 self.messages = messages
 

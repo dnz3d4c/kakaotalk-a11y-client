@@ -1,26 +1,24 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""설정 다이얼로그
-
-상태/핫키 패널을 탭으로 통합한 설정 창.
-넓은 화면 대응 레이아웃 (wx.Sizer 기반).
-"""
+"""설정 다이얼로그. 상태/핫키/정보 탭 구성."""
 
 import webbrowser
 
 import wx
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from .status_panel import StatusPanel
 from .hotkey_panel import HotkeyPanel
 from .. import __about__
+from ..utils.debug_config import debug_config
 
 if TYPE_CHECKING:
     from ..main import EmojiClicker
+    from .debug_hotkey_panel import DebugHotkeyPanel
 
 
 class SettingsDialog(wx.Dialog):
-    """설정 다이얼로그 - 탭 기반 UI"""
+    """설정 다이얼로그. ESC로 닫기, 저장 안 한 변경사항 경고."""
 
     def __init__(self, parent: wx.Window, clicker: "EmojiClicker"):
         super().__init__(
@@ -29,6 +27,7 @@ class SettingsDialog(wx.Dialog):
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
         self.clicker = clicker
+        self.debug_hotkey_panel: Optional["DebugHotkeyPanel"] = None
 
         self._create_ui()
         self._set_initial_size()
@@ -37,7 +36,6 @@ class SettingsDialog(wx.Dialog):
         self.Bind(wx.EVT_CHAR_HOOK, self._on_char_hook)
 
     def _create_ui(self) -> None:
-        """UI 생성"""
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # 노트북 (탭 컨테이너)
@@ -50,6 +48,12 @@ class SettingsDialog(wx.Dialog):
         # 단축키 탭
         self.hotkey_panel = HotkeyPanel(self.notebook, self.clicker)
         self.notebook.AddPage(self.hotkey_panel, "단축키(&K)")
+
+        # 디버그 단축키 탭 (디버그 모드에서만)
+        if debug_config.enabled:
+            from .debug_hotkey_panel import DebugHotkeyPanel
+            self.debug_hotkey_panel = DebugHotkeyPanel(self.notebook, self.clicker)
+            self.notebook.AddPage(self.debug_hotkey_panel, "디버그 단축키(&D)")
 
         # 정보 탭
         self.about_panel = self._create_about_panel()
@@ -77,7 +81,6 @@ class SettingsDialog(wx.Dialog):
         self.notebook.SetFocus()
 
     def _create_about_panel(self) -> wx.Panel:
-        """정보 탭 패널 생성"""
         panel = wx.Panel(self.notebook)
         sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -110,13 +113,12 @@ class SettingsDialog(wx.Dialog):
         return panel
 
     def _on_open_github(self, event: wx.CommandEvent) -> None:
-        """GitHub 페이지 열기"""
         webbrowser.open(__about__.__url__)
         from ..accessibility import speak
         speak("GitHub 페이지 열림")
 
     def _set_initial_size(self) -> None:
-        """초기 크기 설정 - 화면 크기에 맞게 조정"""
+        """저장된 크기 또는 기본값 적용. 화면 80% 이내로 제한."""
         from ..settings import get_settings
         settings = get_settings()
 
@@ -137,15 +139,19 @@ class SettingsDialog(wx.Dialog):
         self.Centre()
 
     def _on_char_hook(self, event: wx.KeyEvent) -> None:
-        """키 이벤트 - ESC로 닫기"""
         if event.GetKeyCode() == wx.WXK_ESCAPE:
             self._try_close()
         else:
             event.Skip()
 
     def _on_save(self, event: wx.CommandEvent) -> None:
-        """저장 버튼"""
-        if self.hotkey_panel.apply_changes():
+        """핫키 변경사항 + 창 크기 저장."""
+        hotkey_ok = self.hotkey_panel.apply_changes()
+        debug_ok = True
+        if self.debug_hotkey_panel:
+            debug_ok = self.debug_hotkey_panel.apply_changes()
+
+        if hotkey_ok and debug_ok:
             # 창 크기 저장
             from ..settings import get_settings
             settings = get_settings()
@@ -164,12 +170,19 @@ class SettingsDialog(wx.Dialog):
             )
 
     def _on_close(self, event: wx.CommandEvent) -> None:
-        """닫기 버튼"""
         self._try_close()
 
-    def _try_close(self) -> None:
-        """닫기 시도 - 변경사항 확인"""
+    def _has_unsaved_changes(self) -> bool:
+        """저장되지 않은 변경사항 있는지 확인."""
         if self.hotkey_panel.has_changes():
+            return True
+        if self.debug_hotkey_panel and self.debug_hotkey_panel.has_changes():
+            return True
+        return False
+
+    def _try_close(self) -> None:
+        """변경사항 있으면 저장 여부 확인 후 닫기."""
+        if self._has_unsaved_changes():
             dlg = wx.MessageDialog(
                 self,
                 "저장하지 않은 변경사항이 있습니다.\n저장하시겠습니까?",
@@ -189,13 +202,12 @@ class SettingsDialog(wx.Dialog):
             self._close()
 
     def _close(self) -> None:
-        """다이얼로그 닫기"""
-        # 타이머 정리
+        """타이머 정리 후 모달 종료."""
         self.status_panel.stop_timer()
         self.EndModal(wx.ID_CLOSE)
 
     def ShowModal(self) -> int:
-        """모달로 표시"""
+        """열림 시 TTS 알림 후 모달 표시."""
         from ..accessibility import speak
         speak("설정 창 열림")
         return super().ShowModal()

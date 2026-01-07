@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""업데이트 설치 모듈"""
+"""업데이트 설치. zip 추출 + batch 스크립트로 파일 교체."""
 
 import os
 import shutil
@@ -21,14 +21,7 @@ EXTRACT_DIR = Path(tempfile.gettempdir()) / "kakaotalk_a11y_extract"
 
 
 def extract_update(zip_path: Path) -> Optional[Path]:
-    """zip 파일 압축 해제.
-
-    Args:
-        zip_path: 다운로드된 zip 파일 경로
-
-    Returns:
-        압축 해제된 폴더 경로 또는 None
-    """
+    """zip 압축 해제. KakaotalkA11y.exe 포함 폴더 경로 반환."""
     try:
         # 기존 압축 해제 폴더 정리
         if EXTRACT_DIR.exists():
@@ -68,27 +61,14 @@ def extract_update(zip_path: Path) -> Optional[Path]:
 
 
 def get_install_dir() -> Optional[Path]:
-    """현재 설치 디렉토리 반환.
-
-    Returns:
-        설치 디렉토리 경로 또는 None (개발 환경)
-    """
+    """설치 디렉토리. PyInstaller 빌드 아니면 None."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
     return None
 
 
 def generate_batch_script(source_dir: Path, install_dir: Path, pid: int) -> str:
-    """업데이트 batch 스크립트 생성.
-
-    Args:
-        source_dir: 새 버전 파일 경로
-        install_dir: 설치 경로
-        pid: 현재 프로세스 ID
-
-    Returns:
-        batch 스크립트 내용
-    """
+    """프로세스 종료 대기 -> 파일 복사 -> 재시작 batch 스크립트."""
     return f"""@echo off
 chcp 65001 > nul
 echo 업데이트 적용 중...
@@ -126,14 +106,7 @@ del "%~f0"
 
 
 def apply_update(extracted_dir: Path) -> bool:
-    """업데이트 적용 (batch 스크립트 생성 및 실행).
-
-    Args:
-        extracted_dir: 압축 해제된 새 버전 폴더
-
-    Returns:
-        성공 여부
-    """
+    """batch 스크립트 실행. 성공 시 프로그램 종료됨."""
     install_dir = get_install_dir()
     if not install_dir:
         log.error("개발 환경에서는 업데이트 불가")
@@ -164,7 +137,6 @@ def apply_update(extracted_dir: Path) -> bool:
 
 
 def cleanup_temp() -> None:
-    """임시 파일 정리."""
     try:
         if TEMP_DIR.exists():
             shutil.rmtree(TEMP_DIR)
@@ -176,5 +148,4 @@ def cleanup_temp() -> None:
 
 
 def get_download_path() -> Path:
-    """다운로드 경로 반환."""
     return TEMP_DIR / "update.zip"

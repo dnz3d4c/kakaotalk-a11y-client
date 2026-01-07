@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""GitHub API 클라이언트"""
+"""GitHub API 클라이언트. 릴리스 조회 및 에셋 다운로드."""
 
 import json
 import re
@@ -21,11 +21,7 @@ DOWNLOAD_TIMEOUT = 60
 
 
 def get_latest_release() -> Optional[dict]:
-    """GitHub에서 최신 릴리스 정보 조회.
-
-    Returns:
-        릴리스 정보 dict (tag_name, body, assets 등) 또는 None
-    """
+    """최신 릴리스 정보 조회. 실패 시 None."""
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
     headers = {
         "Accept": "application/vnd.github.v3+json",
@@ -55,14 +51,7 @@ def get_latest_release() -> Optional[dict]:
 
 
 def find_asset_url(release: dict) -> Optional[str]:
-    """릴리스에서 다운로드할 에셋 URL 찾기.
-
-    Args:
-        release: 릴리스 정보 dict
-
-    Returns:
-        다운로드 URL 또는 None
-    """
+    """KakaotalkA11y-vX.Y.Z-win64.zip 패턴 매칭."""
     assets = release.get("assets", [])
     for asset in assets:
         name = asset.get("name", "")
@@ -80,16 +69,7 @@ def download_asset(
     dest: Path,
     progress_callback: Optional[Callable[[int, int], bool]] = None,
 ) -> bool:
-    """에셋 다운로드.
-
-    Args:
-        url: 다운로드 URL
-        dest: 저장 경로
-        progress_callback: 진행률 콜백 (downloaded, total) -> continue?
-
-    Returns:
-        성공 여부
-    """
+    """에셋 다운로드. progress_callback이 False 반환하면 취소."""
     headers = {"User-Agent": "KakaotalkA11y-Updater"}
 
     try:

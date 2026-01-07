@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""
-UIA 성능 프로파일러
-- 각 작업별 소요 시간 측정
-- 병목 지점 자동 식별
-- 로그 파일: <프로젝트>/logs/profile_*.log (DEBUG 모드에서만)
-"""
+"""UIA 성능 프로파일러. 로그: <프로젝트>/logs/profile_*.log (DEBUG 모드)"""
 import os
 import time
 import logging
@@ -17,10 +12,10 @@ from pathlib import Path
 import json
 from datetime import datetime
 
+from ..config import PERF_SLOW_THRESHOLD_MS, PERF_COMPARISON_THRESHOLD_PCT
+
 
 def _get_project_root() -> Path:
-    """프로젝트 루트 디렉토리 반환"""
-    # profiler.py 위치: src/kakaotalk_a11y_client/utils/profiler.py
     return Path(__file__).parent.parent.parent.parent
 
 
@@ -32,11 +27,7 @@ _profiler_initialized = False
 
 
 def init_profiler(enabled: bool = None) -> None:
-    """프로파일러 초기화 (main에서 호출)
-
-    Args:
-        enabled: True면 로그 활성화, None이면 환경변수 체크 (하위 호환)
-    """
+    """main에서 호출. enabled=None이면 환경변수 DEBUG 체크."""
     global _debug_mode, log_dir, _profiler_initialized
 
     if _profiler_initialized:
@@ -64,7 +55,6 @@ def init_profiler(enabled: bool = None) -> None:
 
 @dataclass
 class ProfileMetrics:
-    """프로파일 메트릭 저장"""
     call_count: int = 0
     total_time: float = 0.0
     min_time: float = float('inf')
@@ -87,7 +77,7 @@ class ProfileMetrics:
 
 
 class UIAProfiler:
-    """UIA 작업 프로파일러"""
+    """싱글톤 프로파일러. measure()로 시간 측정, 100ms 초과 시 경고."""
 
     _instance: Optional['UIAProfiler'] = None
 
@@ -103,12 +93,11 @@ class UIAProfiler:
         self._initialized = True
         self.metrics: Dict[str, ProfileMetrics] = {}
         self.enabled = True
-        self.slow_threshold_ms = 100  # 100ms 이상이면 경고
+        self.slow_threshold_ms = PERF_SLOW_THRESHOLD_MS
         self._context_stack: List[str] = []
 
     @contextmanager
     def measure(self, operation: str):
-        """컨텍스트 매니저로 시간 측정"""
         if not self.enabled:
             yield
             return
@@ -133,7 +122,7 @@ class UIAProfiler:
 
     @contextmanager
     def context(self, name: str):
-        """중첩 컨텍스트 (예: chat_room.get_messages)"""
+        """중첩 컨텍스트. 'parent.child' 형태로 기록."""
         self._context_stack.append(name)
         try:
             yield
@@ -141,7 +130,6 @@ class UIAProfiler:
             self._context_stack.pop()
 
     def profile_uia_search(self, control_type: str, search_params: dict, result_count: int, elapsed_ms: float):
-        """UIA 검색 상세 로깅"""
         params_str = ', '.join(f"{k}={v}" for k, v in search_params.items() if v)
         profile_logger.info(
             f"UIA Search: {control_type}({params_str}) "
@@ -153,7 +141,6 @@ class UIAProfiler:
             profile_logger.warning(f"Large result set: {result_count} items - consider filtering")
 
     def profile_list_items(self, total: int, empty: int, valid: int, elapsed_ms: float):
-        """리스트 아이템 필터링 로깅"""
         empty_ratio = (empty / total * 100) if total > 0 else 0
         profile_logger.info(
             f"ListItems: total={total}, empty={empty} ({empty_ratio:.0f}%), "
@@ -164,7 +151,7 @@ class UIAProfiler:
             profile_logger.warning(f"High empty ratio ({empty_ratio:.0f}%) - virtual scroll detected")
 
     def get_report(self) -> str:
-        """성능 리포트 생성"""
+        """느린 순으로 정렬된 성능 리포트."""
         lines = ["=" * 60, "UIA Performance Report", "=" * 60, ""]
 
         # 느린 순 정렬
@@ -184,7 +171,7 @@ class UIAProfiler:
         return "\n".join(lines)
 
     def save_report(self, path: Optional[Path] = None):
-        """리포트 파일 저장 (DEBUG 모드에서만 동작)"""
+        """리포트 저장 (.txt + .json). DEBUG 모드에서만 동작."""
         if log_dir is None:
             return None  # DEBUG 모드가 아니면 저장하지 않음
         if path is None:
@@ -211,7 +198,6 @@ class UIAProfiler:
 
     @staticmethod
     def load_report_json(path: Path) -> Dict:
-        """JSON 리포트 파일 로드"""
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
@@ -219,18 +205,9 @@ class UIAProfiler:
     def generate_comparison_report(
         baseline_path: Path,
         current_path: Path,
-        threshold_percent: float = 20.0
+        threshold_percent: float = PERF_COMPARISON_THRESHOLD_PCT
     ) -> str:
-        """두 리포트 비교 분석
-
-        Args:
-            baseline_path: 기준 리포트 JSON 파일 경로
-            current_path: 현재 리포트 JSON 파일 경로
-            threshold_percent: 개선/저하 판단 임계값 (%, 기본값 20)
-
-        Returns:
-            마크다운 형식 비교 리포트
-        """
+        """두 리포트 비교. threshold_percent 이상 변화 시 개선/저하로 분류."""
         baseline = UIAProfiler.load_report_json(baseline_path)
         current = UIAProfiler.load_report_json(current_path)
 
@@ -350,7 +327,7 @@ profiler = UIAProfiler()
 
 
 def profile(operation: str = None):
-    """데코레이터로 함수 프로파일링"""
+    """함수 프로파일링 데코레이터."""
     def decorator(func):
         op_name = operation or func.__name__
 
@@ -363,8 +340,7 @@ def profile(operation: str = None):
     return decorator
 
 
-# 편의 함수
-def log_slow(message: str, elapsed_ms: float, threshold_ms: float = 100):
-    """느린 작업 조건부 로깅"""
+def log_slow(message: str, elapsed_ms: float, threshold_ms: float = PERF_SLOW_THRESHOLD_MS):
+    """threshold 초과 시에만 로깅."""
     if elapsed_ms > threshold_ms:
         profile_logger.warning(f"{message}: {elapsed_ms:.1f}ms (threshold: {threshold_ms}ms)")

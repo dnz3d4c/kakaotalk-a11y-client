@@ -12,185 +12,27 @@ from typing import TYPE_CHECKING, Optional
 from ..accessibility import speak
 from ..settings import get_settings, HOTKEY_NAMES, DEFAULT_SETTINGS
 
+# hotkey_dialog에서 import + re-export
+from .hotkey_dialog import (
+    KEY_CODE_MAP,
+    format_hotkey,
+    HotkeyChangeDialog,
+)
+
 if TYPE_CHECKING:
     from ..main import EmojiClicker
 
-
-# 키 코드 → 키 이름 매핑
-KEY_CODE_MAP = {
-    # 방향키
-    wx.WXK_UP: "UP",
-    wx.WXK_DOWN: "DOWN",
-    wx.WXK_LEFT: "LEFT",
-    wx.WXK_RIGHT: "RIGHT",
-    # 네비게이션
-    wx.WXK_HOME: "HOME",
-    wx.WXK_END: "END",
-    wx.WXK_PAGEUP: "PAGEUP",
-    wx.WXK_PAGEDOWN: "PAGEDOWN",
-    wx.WXK_INSERT: "INSERT",
-    wx.WXK_DELETE: "DELETE",
-    # 기타
-    wx.WXK_SPACE: "SPACE",
-    wx.WXK_TAB: "TAB",
-    wx.WXK_RETURN: "ENTER",
-    wx.WXK_ESCAPE: "ESC",
-    wx.WXK_BACK: "BACKSPACE",
-}
-
-
-def format_hotkey(hotkey_config: dict) -> str:
-    """핫키 설정을 문자열로 포맷"""
-    modifiers = hotkey_config.get("modifiers", [])
-    key = hotkey_config.get("key", "")
-
-    parts = []
-    if "ctrl" in modifiers:
-        parts.append("Ctrl")
-    if "alt" in modifiers:
-        parts.append("Alt")
-    if "shift" in modifiers:
-        parts.append("Shift")
-    if "win" in modifiers:
-        parts.append("Win")
-
-    parts.append(key.upper())
-    return "+".join(parts)
-
-
-class HotkeyChangeDialog(wx.Dialog):
-    """핫키 변경 다이얼로그"""
-
-    def __init__(self, parent: wx.Window, hotkey_name: str, display_name: str, current_config: dict):
-        super().__init__(
-            parent,
-            title=f"단축키 변경 - {display_name}",
-            style=wx.DEFAULT_DIALOG_STYLE
-        )
-        self.hotkey_name = hotkey_name
-        self.display_name = display_name
-        self.current_config = current_config
-        self.new_config: Optional[dict] = None
-
-        self._create_ui()
-        self.Centre()
-
-    def _create_ui(self) -> None:
-        """UI 생성"""
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # 현재 값 표시
-        current_str = format_hotkey(self.current_config)
-        current_label = wx.StaticText(
-            self,
-            label=f"현재 단축키: {current_str}"
-        )
-        main_sizer.Add(current_label, 0, wx.ALL, 12)
-
-        # 안내 텍스트
-        help_label = wx.StaticText(
-            self,
-            label="새 단축키를 입력하세요.\nCtrl, Alt, Shift, Win 중 하나 이상 + 키"
-        )
-        main_sizer.Add(help_label, 0, wx.LEFT | wx.RIGHT, 12)
-
-        # 입력 필드
-        self.input_field = wx.TextCtrl(
-            self,
-            style=wx.TE_READONLY | wx.TE_CENTER,
-            size=(250, -1)
-        )
-        self.input_field.SetHint("여기서 키 조합을 누르세요")
-        self.input_field.Bind(wx.EVT_KEY_DOWN, self._on_key_down)
-        main_sizer.Add(self.input_field, 0, wx.ALL | wx.EXPAND, 12)
-
-        # 상태 텍스트
-        self.status_label = wx.StaticText(self, label="")
-        self.status_label.SetForegroundColour(wx.Colour(0, 100, 0))
-        main_sizer.Add(self.status_label, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
-
-        # 버튼
-        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        btn_sizer.AddStretchSpacer()
-
-        self.ok_btn = wx.Button(self, wx.ID_OK, "확인(&O)")
-        self.ok_btn.Disable()
-        btn_sizer.Add(self.ok_btn, 0, wx.RIGHT, 8)
-
-        cancel_btn = wx.Button(self, wx.ID_CANCEL, "취소(&C)")
-        btn_sizer.Add(cancel_btn, 0)
-
-        main_sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 12)
-
-        self.SetSizer(main_sizer)
-        self.Fit()
-
-        # 포커스 설정
-        self.input_field.SetFocus()
-
-    def _on_key_down(self, event: wx.KeyEvent) -> None:
-        """키 입력 캡처"""
-        key_code = event.GetKeyCode()
-
-        # modifier 키만 누른 경우 무시
-        if key_code in (wx.WXK_CONTROL, wx.WXK_ALT, wx.WXK_SHIFT,
-                        wx.WXK_WINDOWS_LEFT, wx.WXK_WINDOWS_RIGHT):
-            return
-
-        # modifier 확인
-        modifiers = []
-        if event.ControlDown():
-            modifiers.append("ctrl")
-        if event.AltDown():
-            modifiers.append("alt")
-        if event.ShiftDown():
-            modifiers.append("shift")
-        # Win 키 감지: wx.GetKeyState() 사용
-        if wx.GetKeyState(wx.WXK_WINDOWS_LEFT) or wx.GetKeyState(wx.WXK_WINDOWS_RIGHT):
-            modifiers.append("win")
-
-        # modifier 없으면 무시
-        if not modifiers:
-            msg = "수정자 키가 필요합니다"
-            self.status_label.SetLabel("Ctrl, Alt, Shift, Win 중 하나 이상 필요")
-            self.status_label.SetForegroundColour(wx.Colour(200, 0, 0))
-            speak(msg)
-            return
-
-        # 키 이름 가져오기
-        key_name = ""
-        if key_code in KEY_CODE_MAP:
-            key_name = KEY_CODE_MAP[key_code]
-        elif 65 <= key_code <= 90:  # A-Z
-            key_name = chr(key_code)
-        elif 48 <= key_code <= 57:  # 0-9
-            key_name = chr(key_code)
-        elif 0x70 <= key_code <= 0x7B:  # F1-F12
-            key_name = f"F{key_code - 0x6F}"
-        else:
-            msg = "지원하지 않는 키입니다"
-            self.status_label.SetLabel("지원하지 않는 키")
-            self.status_label.SetForegroundColour(wx.Colour(200, 0, 0))
-            speak(msg)
-            return
-
-        # 새 핫키 설정
-        self.new_config = {"modifiers": modifiers, "key": key_name}
-        hotkey_str = format_hotkey(self.new_config)
-
-        self.input_field.SetValue(hotkey_str)
-        self.status_label.SetLabel(f"'{hotkey_str}'로 변경됩니다")
-        self.status_label.SetForegroundColour(wx.Colour(0, 100, 0))
-        self.ok_btn.Enable()
-        speak(f"{hotkey_str}로 변경됩니다")
-
-    def get_new_config(self) -> Optional[dict]:
-        """새 설정 반환"""
-        return self.new_config
+# 하위 호환성을 위한 re-export
+__all__ = [
+    "KEY_CODE_MAP",
+    "format_hotkey",
+    "HotkeyChangeDialog",
+    "HotkeyPanel",
+]
 
 
 class HotkeyPanel(wx.Panel):
-    """핫키 설정 패널 - ListCtrl + 컨텍스트 메뉴"""
+    """핫키 설정 패널. 우클릭/Enter로 변경, Delete로 기본값 복원."""
 
     # 컨텍스트 메뉴 ID
     ID_CHANGE = wx.NewIdRef()
@@ -201,12 +43,11 @@ class HotkeyPanel(wx.Panel):
         self.clicker = clicker
         self.settings = get_settings()
         self._pending_changes: dict = {}
-        self._hotkey_names = ["scan", "reread", "exit"]
+        self._hotkey_names = ["scan", "exit"]
 
         self._create_ui()
 
     def _create_ui(self) -> None:
-        """UI 생성"""
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # 핫키 설정 섹션
@@ -257,7 +98,7 @@ class HotkeyPanel(wx.Panel):
         self.SetSizer(main_sizer)
 
     def _load_hotkeys(self) -> None:
-        """핫키 데이터 로드"""
+        """ListCtrl에 핫키 데이터 표시. _pending_changes 우선 반영."""
         self.list_ctrl.DeleteAllItems()
         hotkeys = self.settings.get_all_hotkeys()
 
@@ -275,14 +116,12 @@ class HotkeyPanel(wx.Panel):
             self.list_ctrl.SetItem(i, 1, hotkey_str)
 
     def _get_selected_hotkey_name(self) -> Optional[str]:
-        """선택된 핫키 이름 반환"""
         idx = self.list_ctrl.GetFirstSelected()
         if idx == -1:
             return None
         return self._hotkey_names[idx]
 
     def _on_context_menu(self, event: wx.ContextMenuEvent) -> None:
-        """컨텍스트 메뉴 표시"""
         if self.list_ctrl.GetFirstSelected() == -1:
             return
 
@@ -297,7 +136,7 @@ class HotkeyPanel(wx.Panel):
         menu.Destroy()
 
     def _on_key_down(self, event: wx.KeyEvent) -> None:
-        """키보드 단축키 처리"""
+        """Enter/Space: 변경, Delete: 복원."""
         key_code = event.GetKeyCode()
 
         # Enter 또는 Space: 변경 다이얼로그
@@ -310,7 +149,7 @@ class HotkeyPanel(wx.Panel):
             event.Skip()
 
     def _on_change(self, event) -> None:
-        """변경 메뉴 클릭"""
+        """변경 다이얼로그 표시 후 결과를 _pending_changes에 저장."""
         hotkey_name = self._get_selected_hotkey_name()
         if not hotkey_name:
             return
@@ -332,13 +171,11 @@ class HotkeyPanel(wx.Panel):
                 self._pending_changes[hotkey_name] = new_config
                 self._load_hotkeys()
 
-                from ..accessibility import speak
                 speak(f"{display_name} 단축키 변경됨. 저장 필요.")
 
         dlg.Destroy()
 
     def _on_restore(self, event) -> None:
-        """복원 메뉴 클릭"""
         hotkey_name = self._get_selected_hotkey_name()
         if not hotkey_name:
             return
@@ -346,17 +183,15 @@ class HotkeyPanel(wx.Panel):
         self._restore_hotkey(hotkey_name)
 
     def _on_restore_selected(self, event: wx.CommandEvent) -> None:
-        """선택 항목 기본값 복원 버튼"""
         hotkey_name = self._get_selected_hotkey_name()
         if not hotkey_name:
-            from ..accessibility import speak
             speak("단축키를 먼저 선택하세요.")
             return
 
         self._restore_hotkey(hotkey_name)
 
     def _restore_hotkey(self, hotkey_name: str) -> None:
-        """단축키 기본값 복원"""
+        """확인 후 기본값을 _pending_changes에 저장."""
         display_name = HOTKEY_NAMES.get(hotkey_name, hotkey_name)
         default_config = DEFAULT_SETTINGS["hotkeys"].get(hotkey_name, {})
         default_str = format_hotkey(default_config)
@@ -372,13 +207,11 @@ class HotkeyPanel(wx.Panel):
             self._pending_changes[hotkey_name] = default_config.copy()
             self._load_hotkeys()
 
-            from ..accessibility import speak
             speak(f"{display_name} 기본값으로 복원됨. 저장 필요.")
 
         dlg.Destroy()
 
     def _on_reset_all(self, event: wx.CommandEvent) -> None:
-        """모든 단축키 기본값 복원"""
         dlg = wx.MessageDialog(
             self,
             "모든 단축키를 기본값으로 복원하시겠습니까?",
@@ -393,13 +226,12 @@ class HotkeyPanel(wx.Panel):
 
             self._load_hotkeys()
 
-            from ..accessibility import speak
             speak("모든 단축키 기본값으로 복원됨. 저장 필요.")
 
         dlg.Destroy()
 
     def apply_changes(self) -> bool:
-        """변경사항 적용"""
+        """_pending_changes를 settings에 저장. 저장 성공 시 True."""
         if not self._pending_changes:
             return True
 
@@ -410,5 +242,4 @@ class HotkeyPanel(wx.Panel):
         return self.settings.save()
 
     def has_changes(self) -> bool:
-        """변경사항 있는지 확인"""
         return bool(self._pending_changes)

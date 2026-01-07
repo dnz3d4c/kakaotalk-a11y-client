@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""업데이터 패키지
-
-GitHub 릴리스 기반 자동 업데이트 기능 제공.
-"""
+"""GitHub 릴리스 기반 자동 업데이트."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,7 +37,6 @@ __all__ = [
 
 @dataclass
 class UpdateInfo:
-    """업데이트 정보"""
 
     version: str
     current_version: str
@@ -49,16 +45,11 @@ class UpdateInfo:
 
 
 def is_frozen() -> bool:
-    """PyInstaller로 빌드된 환경인지 확인."""
     return get_install_dir() is not None
 
 
 def check_for_update() -> Optional[UpdateInfo]:
-    """업데이트 확인.
-
-    Returns:
-        새 버전이 있으면 UpdateInfo, 없으면 None
-    """
+    """새 버전 있으면 UpdateInfo 반환."""
     release = get_latest_release()
     if not release:
         return None
@@ -81,13 +72,7 @@ def check_for_update() -> Optional[UpdateInfo]:
 
 
 def check_for_update_if_needed() -> Optional[UpdateInfo]:
-    """간격 체크 후 필요시에만 업데이트 확인.
-
-    마지막 체크 후 CHECK_INTERVAL(4시간) 미경과 시 스킵.
-
-    Returns:
-        새 버전이 있으면 UpdateInfo, 없거나 스킵하면 None
-    """
+    """4시간 간격으로 체크. 미충족 시 스킵."""
     import time
 
     from ..settings import get_settings
@@ -114,15 +99,7 @@ def start_download(
     update_info: UpdateInfo,
     progress_callback: Optional[Callable[[int, int], bool]] = None,
 ) -> Optional[Path]:
-    """업데이트 다운로드.
-
-    Args:
-        update_info: 업데이트 정보
-        progress_callback: 진행률 콜백 (downloaded, total) -> continue?
-
-    Returns:
-        다운로드된 zip 경로 또는 None
-    """
+    """다운로드. 성공 시 zip 경로 반환."""
     dest = get_download_path()
 
     if download_asset(update_info.download_url, dest, progress_callback):
@@ -133,14 +110,7 @@ def start_download(
 
 
 def apply_and_restart(zip_path: Path) -> bool:
-    """업데이트 적용 및 재시작.
-
-    Args:
-        zip_path: 다운로드된 zip 파일 경로
-
-    Returns:
-        성공 여부 (성공 시 프로그램 종료됨)
-    """
+    """압축 해제 + 적용. 성공 시 프로그램 종료됨."""
     extracted = extract_update(zip_path)
     if not extracted:
         cleanup_temp()
@@ -155,5 +125,4 @@ def apply_and_restart(zip_path: Path) -> bool:
 
 
 def cleanup() -> None:
-    """업데이트 취소/실패 시 정리."""
     cleanup_temp()

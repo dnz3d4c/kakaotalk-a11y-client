@@ -37,27 +37,12 @@ class KakaoWindow:
 
 
 def check_kakaotalk_running() -> bool:
-    """카카오톡이 실행 중인지 확인한다.
-
-    Returns:
-        실행 중이면 True
-    """
     windows = _enumerate_kakaotalk_windows()
     return len(windows) > 0
 
 
 def check_uia_available() -> dict:
-    """UIA(UI Automation) 사용 가능 여부만 체크한다.
-
-    카카오톡 실행 여부와 무관하게, 시스템에서 UIA가 동작하는지 확인.
-
-    Returns:
-        {
-            "available": bool,       # UIA 사용 가능 여부
-            "message": str,          # 사용자용 메시지
-            "error_detail": str,     # 디버그용 상세 오류
-        }
-    """
+    """시스템 UIA 동작 여부. 카카오톡 실행과 무관."""
     result = {
         "available": False,
         "message": "",
@@ -87,16 +72,7 @@ def check_uia_available() -> dict:
 
 
 def check_uia_accessibility() -> dict:
-    """카카오톡 UIA 접근 가능 여부를 체크한다.
-
-    Returns:
-        {
-            "accessible": bool,      # UIA 접근 가능 여부
-            "kakaotalk_running": bool,  # 카카오톡 실행 여부
-            "chat_window_found": bool,  # 채팅방 창 발견 여부
-            "message": str           # 상태 메시지
-        }
-    """
+    """카카오톡 UIA 접근 가능 여부. 실행 여부, 채팅방 여부 포함."""
     result = {
         "accessible": False,
         "kakaotalk_running": False,
@@ -154,11 +130,7 @@ def check_uia_accessibility() -> dict:
 
 
 def find_chat_window() -> Optional[int]:
-    """열린 채팅방 창의 핸들을 반환한다.
-
-    Returns:
-        채팅방 창 핸들(hwnd) 또는 None
-    """
+    """첫 번째 열린 채팅방 hwnd. 없으면 None."""
     windows = _enumerate_kakaotalk_windows()
     chat_windows = [w for w in windows if w.is_chat]
 
@@ -168,11 +140,7 @@ def find_chat_window() -> Optional[int]:
 
 
 def find_main_window() -> Optional[int]:
-    """카카오톡 메인 창의 핸들을 반환한다.
-
-    Returns:
-        메인 창 핸들(hwnd) 또는 None
-    """
+    """메인 창 hwnd. 없으면 None."""
     windows = _enumerate_kakaotalk_windows()
     main_windows = [w for w in windows if not w.is_chat]
 
@@ -182,21 +150,12 @@ def find_main_window() -> Optional[int]:
 
 
 def get_active_chat_windows() -> list[KakaoWindow]:
-    """열린 모든 채팅방 목록을 반환한다.
-
-    Returns:
-        KakaoWindow 리스트
-    """
     windows = _enumerate_kakaotalk_windows()
     return [w for w in windows if w.is_chat]
 
 
 def find_kakaotalk_window() -> Optional[int]:
-    """카카오톡 창 핸들을 찾아 반환한다. (채팅방 우선)
-
-    Returns:
-        창 핸들(hwnd) 또는 None
-    """
+    """채팅방 우선, 없으면 메인 창."""
     # 채팅방 창 우선
     chat_hwnd = find_chat_window()
     if chat_hwnd:
@@ -207,14 +166,7 @@ def find_kakaotalk_window() -> Optional[int]:
 
 
 def is_kakaotalk_chat_window(hwnd: int) -> bool:
-    """카카오톡 채팅방 창인지 확인한다.
-
-    Args:
-        hwnd: 창 핸들
-
-    Returns:
-        채팅방 창이면 True
-    """
+    """채팅방 창인지. 메인 창/대화상자는 False."""
     try:
         class_name = win32gui.GetClassName(hwnd)
         title = win32gui.GetWindowText(hwnd)
@@ -231,14 +183,7 @@ def is_kakaotalk_chat_window(hwnd: int) -> bool:
 
 
 def is_kakaotalk_window(hwnd: int) -> bool:
-    """카카오톡 창인지 확인 (메인 창, 채팅방 창, 메뉴 포함).
-
-    Args:
-        hwnd: 창 핸들
-
-    Returns:
-        카카오톡 창이면 True (메인 창, 채팅방 창, EVA_Menu 모두 포함)
-    """
+    """메인/채팅방/메뉴 모두 포함."""
     try:
         class_name = win32gui.GetClassName(hwnd)
         # EVA_Window_Dblclk 클래스 또는 EVA_Menu 클래스면 카카오톡 창
@@ -248,14 +193,7 @@ def is_kakaotalk_window(hwnd: int) -> bool:
 
 
 def is_kakaotalk_menu_window(hwnd: int) -> bool:
-    """카카오톡 팝업메뉴 창인지 확인.
-
-    Args:
-        hwnd: 창 핸들
-
-    Returns:
-        팝업메뉴 창이면 True
-    """
+    """EVA_Menu 클래스인지."""
     try:
         class_name = win32gui.GetClassName(hwnd)
         return class_name == 'EVA_Menu'
@@ -268,16 +206,7 @@ _menu_cache: dict = {"hwnd": None, "time": 0.0}
 
 
 def find_kakaotalk_menu_window() -> Optional[int]:
-    """현재 열려있는 카카오톡 팝업메뉴 창 찾기.
-
-    GetForegroundWindow()와 달리, visible한 모든 창 중에서 찾음.
-    팝업메뉴는 오버레이로 표시되어 포그라운드가 아닐 수 있음.
-
-    캐싱: TTL 이내 재호출 시 이전 결과 반환 (EnumWindows 비용 절감)
-
-    Returns:
-        팝업메뉴 창 핸들 또는 None
-    """
+    """visible한 EVA_Menu 찾기. 캐시 TTL 적용 (EnumWindows 비용 절감)."""
     global _menu_cache
     now = time.time()
 
@@ -292,7 +221,7 @@ def find_kakaotalk_menu_window() -> Optional[int]:
 
 
 def _find_kakaotalk_menu_window_impl() -> Optional[int]:
-    """메뉴 창 찾기 실제 구현 (EnumWindows 호출)."""
+    """EnumWindows로 EVA_Menu 검색."""
     result = None
 
     def enum_callback(hwnd, _):
@@ -316,11 +245,7 @@ def _find_kakaotalk_menu_window_impl() -> Optional[int]:
 
 
 def _enumerate_kakaotalk_windows() -> list[KakaoWindow]:
-    """모든 카카오톡 창을 열거한다.
-
-    Returns:
-        KakaoWindow 리스트
-    """
+    """visible한 모든 EVA_Window_Dblclk 창 열거."""
     result = []
 
     def enum_callback(hwnd, _):
@@ -358,20 +283,12 @@ def _enumerate_kakaotalk_windows() -> list[KakaoWindow]:
 
 
 def get_window_rect(hwnd: int) -> tuple[int, int, int, int]:
-    """창의 좌표와 크기를 반환한다.
-
-    Returns:
-        (left, top, right, bottom) 튜플
-    """
+    """(left, top, right, bottom) 화면 좌표."""
     return win32gui.GetWindowRect(hwnd)
 
 
 def get_client_rect(hwnd: int) -> tuple[int, int, int, int]:
-    """창의 클라이언트 영역(타이틀바 제외) 좌표를 반환한다.
-
-    Returns:
-        (left, top, right, bottom) 튜플 (화면 좌표)
-    """
+    """클라이언트 영역 화면 좌표. 타이틀바 제외."""
     client_rect = win32gui.GetClientRect(hwnd)
     left, top = win32gui.ClientToScreen(hwnd, (0, 0))
     right = left + client_rect[2]
@@ -381,11 +298,7 @@ def get_client_rect(hwnd: int) -> tuple[int, int, int, int]:
 
 
 def bring_window_to_front(hwnd: int) -> bool:
-    """창을 최상단으로 가져온다.
-
-    Returns:
-        성공 여부
-    """
+    """최소화 상태면 복원 후 포그라운드로."""
     try:
         if win32gui.IsIconic(hwnd):
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)

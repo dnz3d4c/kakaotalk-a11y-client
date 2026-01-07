@@ -1,13 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""
-디버그 도구 통합 관리
-
-목적:
-- 상황에 맞는 도구 자동 실행
-- 에러/느린 작업 발생 시 자동 덤프
-- 디버그 정보 일관된 수집
-"""
+"""디버그 도구 통합 관리. 에러/느린 작업 발생 시 자동 덤프."""
 
 import json
 import traceback
@@ -24,12 +17,10 @@ from .uia_utils import dump_tree_json
 
 
 class KakaoNotFoundError(Exception):
-    """카카오톡 창을 찾을 수 없음"""
     pass
 
 
 class DebugToolManager:
-    """디버그 도구 통합 관리자"""
 
     def __init__(self):
         self._session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -44,18 +35,7 @@ class DebugToolManager:
         auto_dump_on_error: bool = True,
         auto_dump_on_slow: bool = True
     ):
-        """
-        디버그 작업 컨텍스트
-
-        사용:
-            with debug_tools.debug_operation('open_menu'):
-                menu.open()
-
-        동작:
-            - 작업 시간 측정 (프로파일러 연동)
-            - 에러 발생 시 자동 트리 덤프
-            - 느린 작업 시 자동 트리 덤프
-        """
+        """작업 시간 측정 + 에러/느린 작업 시 자동 트리 덤프."""
         if not debug_config.enabled:
             yield
             return
@@ -98,7 +78,6 @@ class DebugToolManager:
                 )
 
     def _find_kakao_window(self) -> auto.Control:
-        """카카오톡 창 찾기"""
         root = auto.GetRootControl()
         for win in root.GetChildren():
             name = win.Name or ''
@@ -113,7 +92,7 @@ class DebugToolManager:
         include_coords: bool = True,
         max_depth: int = 6
     ) -> Path:
-        """카카오톡 트리 덤프를 파일로 저장"""
+        """카카오톡 UIA 트리를 JSON 파일로 저장."""
         kakao = self._find_kakao_window()
 
         tree = dump_tree_json(kakao, max_depth=max_depth, include_coords=include_coords)
@@ -131,7 +110,6 @@ class DebugToolManager:
         return dump_path
 
     def _auto_dump(self, trigger: str, context: dict):
-        """자동 덤프 실행"""
         try:
             timestamp = datetime.now().strftime('%H%M%S')
             filename = f'auto_{trigger}_{timestamp}'
@@ -168,16 +146,7 @@ class DebugToolManager:
         condition_met: bool,
         context: Optional[dict] = None
     ):
-        """
-        조건부 덤프
-
-        사용:
-            debug_tools.dump_on_condition(
-                'empty_list',
-                len(items) == 0,
-                {'expected_min': 1}
-            )
-        """
+        """조건 충족 + auto_analyze_scenarios에 등록된 경우 자동 덤프."""
         if not debug_config.enabled:
             return
 
@@ -193,20 +162,12 @@ class DebugToolManager:
         )
 
     def log_debug(self, message: str, **kwargs):
-        """디버그 로그 (디버그 모드에서만)"""
         if debug_config.enabled:
             extra = ' | '.join(f'{k}={v}' for k, v in kwargs.items())
             print(f"[DEBUG] {message}" + (f" | {extra}" if extra else ""))
 
     def generate_session_report(self) -> Optional[Path]:
-        """
-        디버그 세션 종료 시 리포트 생성
-
-        포함 내용:
-        - 프로파일러 요약
-        - 자동 덤프 목록
-        - 에러 발생 내역
-        """
+        """세션 리포트 생성: 프로파일러 요약, 덤프 목록, 에러 내역."""
         if not debug_config.enabled:
             return None
 
@@ -241,7 +202,6 @@ class DebugToolManager:
         return report_path
 
     def _format_dump_list(self) -> str:
-        """자동 덤프 목록 포맷"""
         try:
             dumps = list(debug_config.debug_output_dir.glob(f'auto_*'))
             if not dumps:
@@ -255,7 +215,6 @@ class DebugToolManager:
             return "- 덤프 목록 로드 실패"
 
     def _format_issues(self) -> str:
-        """발생한 문제 포맷"""
         if not self._issues:
             return "- 발생한 문제 없음"
 

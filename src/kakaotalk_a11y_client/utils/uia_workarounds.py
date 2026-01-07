@@ -1,12 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""카카오톡 UIA Workaround (NVDA 패턴)
-
-NVDA 스타일로 앱별 특이점 및 우회 방법을 문서화.
-이슈 번호 형식: #KAKAO-NNN
-
-참고: docs/KAKAO_UIA_QUIRKS.md
-"""
+"""카카오톡 UIA Workaround. 상세: docs/KAKAO_UIA_QUIRKS.md"""
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -19,7 +13,6 @@ log = get_logger("UIA_Workaround")
 
 @dataclass
 class Workaround:
-    """Workaround 정의"""
     id: str  # KAKAO-001 형식
     description: str
     affected_class: Optional[str] = None
@@ -85,22 +78,14 @@ WORKAROUNDS: Dict[str, Workaround] = {
 
 
 def get_workaround(workaround_id: str) -> Optional[Workaround]:
-    """Workaround 정보 가져오기"""
     return WORKAROUNDS.get(workaround_id)
 
 
 def list_workarounds() -> List[Workaround]:
-    """모든 Workaround 목록"""
     return list(WORKAROUNDS.values())
 
 
 def log_workaround(workaround_id: str, context: str = "") -> None:
-    """Workaround 적용 로깅
-
-    Args:
-        workaround_id: Workaround ID (예: KAKAO-001)
-        context: 추가 컨텍스트 정보
-    """
     wa = WORKAROUNDS.get(workaround_id)
     if wa:
         msg = f"#{workaround_id}: {wa.description}"
@@ -114,16 +99,7 @@ def log_workaround(workaround_id: str, context: str = "") -> None:
 # =============================================================================
 
 def should_use_msaa(class_name: str) -> bool:
-    """UIA 대신 MSAA 사용해야 하는지 판단
-
-    NVDA의 badUIAWindowClassNames 패턴.
-
-    Args:
-        class_name: 윈도우 클래스명
-
-    Returns:
-        True면 MSAA 사용 권장
-    """
+    """UIA 대신 MSAA 사용 권장 여부. EVA_Menu면 True."""
     # 카카오톡은 대부분 UIA 지원
     # 메뉴 항목 이름만 MSAA(LegacyIAccessible) 필요
     msaa_preferred = [
@@ -133,14 +109,7 @@ def should_use_msaa(class_name: str) -> bool:
 
 
 def should_skip_element(control: auto.Control) -> bool:
-    """이 요소를 탐색에서 제외해야 하는지 판단
-
-    Args:
-        control: UIA 컨트롤
-
-    Returns:
-        True면 제외
-    """
+    """탐색 제외 여부. Chrome_* 또는 빈 ListItem이면 True."""
     try:
         class_name = control.ClassName or ""
 
@@ -162,16 +131,7 @@ def should_skip_element(control: auto.Control) -> bool:
 
 
 def get_element_name(control: auto.Control) -> str:
-    """요소 이름 가져오기 (Workaround 적용)
-
-    MSAA가 필요한 경우 LegacyIAccessible.Name 사용.
-
-    Args:
-        control: UIA 컨트롤
-
-    Returns:
-        요소 이름
-    """
+    """요소 이름. MSAA 필요 시 LegacyIAccessible.Name 사용."""
     try:
         class_name = control.ClassName or ""
 

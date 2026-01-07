@@ -11,6 +11,43 @@
 - `pass`로 비어있는 함수 확인 (주석에 "비활성화됨" 등 표시 있을 수 있음)
 - `enable()` 같은 활성화 함수가 실제로 뭔가를 하는지 확인
 
+## Docstring 스타일
+
+### 원칙
+- 함수명/타입힌트로 알 수 있는 건 생략
+- 한 줄로 충분하면 한 줄로
+- Args/Returns 섹션은 복잡한 경우만
+- "왜(why)" 설명, "무엇(what)"은 코드가 설명
+
+### 작성 기준
+| 상황 | docstring |
+|------|-----------|
+| 함수명이 명확 | 생략 또는 한 줄 |
+| 비직관적 동작/부작용 | 반드시 명시 |
+| 복잡한 파라미터 | Args 섹션 |
+| 외부 API | 상세 설명 |
+
+### 예시
+```python
+# Bad - 뻔한 내용 반복
+def speak(text: str) -> bool:
+    """텍스트를 음성으로 출력합니다.
+
+    Args:
+        text: 출력할 텍스트
+    Returns:
+        성공 여부
+    """
+
+# Good - 핵심만
+def speak(text: str) -> bool:
+    """음성 + 점자 출력. interrupt=True면 음성만."""
+
+# Good - 비직관적 동작 설명
+def cleanup():
+    """리소스 정리. 반드시 finally에서 호출할 것."""
+```
+
 ## 코드 추가 전 아키텍처 체크리스트
 
 상세 규칙: [ARCHITECTURE_RULES.md](.claude/guides/ARCHITECTURE_RULES.md)
@@ -71,11 +108,10 @@ with open(target, 'w', encoding='utf-8') as f:
 ## 프로젝트 구조
 
 - `src/kakaotalk_a11y_client/` - 메인 소스
-  - `main.py` - 진입점, 핫키/네비게이션 조율
+  - `main.py` - 진입점, 전체 조율
   - `navigation/` - 탐색 모듈
-    - `context_menu.py` - 컨텍스트 메뉴 처리
     - `chat_room.py` - 채팅방 메시지 탐색
-  - `keyboard_nav.py` - 키보드 후킹
+    - `message_monitor.py` - 새 메시지 자동 읽기
 - `scripts/` - 유틸리티 스크립트
 
 ## 버전 관리
@@ -85,6 +121,11 @@ with open(target, 'w', encoding='utf-8') as f:
 - `src/kakaotalk_a11y_client/__about__.py`: `__version__ = "X.Y.Z"`
 
 릴리즈: `/ship X.Y.Z` 스킬 사용 (버전 업데이트 + 빌드 + GitHub Release)
+
+### 중요 규칙
+- **버전 커밋은 `/ship`만 생성** - 수동으로 `chore(version)` 커밋 금지
+- **feat/fix 커밋 후 CHANGELOG 업데이트** - `[Unreleased]` 섹션에 추가
+- 개발 중에는 버전 유지, 릴리즈 시점에 `/ship`이 버전 + CHANGELOG 동시 처리
 
 상세 릴리즈 가이드: [RELEASING.md](docs/RELEASING.md)
 
@@ -122,8 +163,15 @@ uv run kakaotalk-a11y
 uv run kakaotalk-a11y --debug              # DEBUG 레벨 (상태 변경 로그)
 uv run kakaotalk-a11y --debug --trace      # TRACE 레벨 (고빈도 루프 로그 포함)
 uv run kakaotalk-a11y --debug-profile      # 프로파일러만
-uv run kakaotalk-a11y --debug --debug-events        # 이벤트 모니터 포함
 uv run kakaotalk-a11y --debug --debug-dump-on-start # 시작 시 트리 덤프
+
+# 이벤트 모니터 (확장)
+uv run kakaotalk-a11y --debug --debug-events                    # 기본 (Focus+Structure)
+uv run kakaotalk-a11y --debug --debug-events=all                # 모든 이벤트
+uv run kakaotalk-a11y --debug --debug-events=focus,property     # 선택적 이벤트
+uv run kakaotalk-a11y --debug --debug-events --debug-events-filter=ListItemControl  # 필터링
+uv run kakaotalk-a11y --debug --debug-events --debug-events-format=json  # JSON 출력
+uv run kakaotalk-a11y --debug --debug-events-suggest            # 권장 이벤트 모드
 
 # 디버그 모드 (환경변수 - 레거시)
 $env:DEBUG=1; uv run kakaotalk-a11y  # DEBUG 레벨
@@ -156,13 +204,15 @@ Get-Content C:\project\kakaotalk-a11y\client\logs\profile_*.log -Tail 50
 - **성능 분석**: `--debug-profile`
 
 ### 디버그 단축키 (--debug 모드에서만)
-- `Ctrl+Shift+D`: 즉시 UIA 트리 덤프
-- `Ctrl+Shift+P`: 프로파일 요약 출력
+- `Ctrl+Shift+D`: UIA 트리 덤프
+- `Ctrl+Shift+P`: 프로파일 요약
 - `Ctrl+Shift+R`: 이벤트 모니터 토글
+- `Ctrl+Shift+S`: 디버그 상태 확인
+- `Ctrl+Shift+1`: 탐색 테스트
+- `Ctrl+Shift+2`: 메시지 테스트
 
 ### 디버그 출력 위치
-- 덤프/리포트: `~/.kakaotalk_a11y/debug/`
-- 프로파일 로그: `%TEMP%/kakaotalk_a11y_profile_*.log`
+- 덤프/리포트/프로파일: `logs/` (프로젝트 폴더 내)
 
 **주의**: `DEBUG=1 uv run ...` 형식은 Linux/bash 전용. Windows에서는 `$env:DEBUG=1;` 사용.
 
@@ -172,6 +222,84 @@ Get-Content C:\project\kakaotalk-a11y\client\logs\profile_*.log -Tail 50
 - `kakaotalk-a11y/release`: GitHub 배포용
 
 상세: [RELEASING.md](docs/RELEASING.md)
+
+---
+
+## 새 UI 기능 분석 자동 제안
+
+상세 절차: [EVENT_ANALYSIS_WORKFLOW.md](.claude/guides/EVENT_ANALYSIS_WORKFLOW.md)
+
+### 트리거 조건
+다음 상황에서 표준 분석 절차 자동 제안:
+- "기능 구현", "기능 추가" 언급
+- "UI 분석", "이벤트 추적" 언급
+- 구체적 UI 동작 설명 (예: "@ 입력하면 목록이 나옴")
+- 새 UI 요소 접근성 지원 요청
+
+### 자동 제안 워크플로우
+
+**Step 1**: 기능 유형 파악 → 권장 이벤트 조합 안내
+```
+이 기능은 [팝업/목록/입력] 유형으로 보임.
+권장 분석:
+1. 트리 덤프: Ctrl+Shift+D (해당 UI 상태에서)
+2. 이벤트: --debug-events=[권장조합]
+```
+
+**Step 2**: 분석 결과 요청
+```
+다음 정보 공유해줘:
+- 트리 덤프에서 [대상] 부분
+- 이벤트 로그 (핵심 동작 재현 시)
+```
+
+**Step 3**: 결과 해석 + 구현 전략 제안
+- 덤프/로그 분석
+- 기존 패턴과 비교
+- 구현 방향 제안
+
+### 기능 유형별 권장 이벤트
+
+| 유형 | 권장 이벤트 | 명령어 |
+|------|------------|--------|
+| 팝업/드롭다운 | structure, focus | `--debug-events=structure,focus` |
+| 목록 항목 추가/제거 | structure | `--debug-events=structure` |
+| 입력/편집 | property, focus | `--debug-events=property,focus` |
+| 체크박스/토글 | property | `--debug-events=property` |
+| 포커스 이동만 | focus | `--debug-events=focus` |
+| **미지의 케이스** | all | `--debug-events=all` |
+
+### 미지의 케이스 대응
+
+기존 패턴과 매칭 안 되면 Phase 0 (탐색적 분석) 먼저:
+1. `--debug-events=all`로 전체 이벤트 수집
+2. 트리 덤프로 구조 파악
+3. 새 패턴 발견 시 `KAKAO_UIA_QUIRKS.md`에 문서화
+4. 필요시 SmartListFilter/핸들러 확장
+
+### 예시: 멘션 기능
+
+**사용자**: "멘션 기능 구현하려고 함. @ 입력하면 멘션 목록 나옴"
+
+**Claude 응답**:
+```
+팝업/드롭다운 유형. 다음 분석 진행해:
+
+1. 트리 덤프:
+   - 채팅방에서 @ 입력
+   - Ctrl+Shift+D
+   - 멘션 목록 관련 요소 공유
+
+2. 이벤트 추적:
+   uv run kakaotalk-a11y --debug --debug-events=structure,focus
+
+   재현:
+   - @ 입력 (목록 출현)
+   - 방향키로 항목 이동
+   - Enter로 선택
+
+결과 공유하면 해석 + 구현 방향 제안할게.
+```
 
 ---
 

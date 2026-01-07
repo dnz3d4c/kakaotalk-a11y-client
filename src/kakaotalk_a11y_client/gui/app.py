@@ -17,7 +17,7 @@ class KakaoA11yApp(wx.App):
         super().__init__(redirect=False)
 
     def OnInit(self) -> bool:
-        """앱 초기화 - 메인 프레임 생성"""
+        """메인 프레임 생성 후 5초 뒤 백그라운드 업데이트 확인 예약."""
         from .main_frame import MainFrame
 
         self.frame = MainFrame(self.clicker)
@@ -28,7 +28,7 @@ class KakaoA11yApp(wx.App):
         return True
 
     def _check_update_background(self) -> None:
-        """백그라운드 업데이트 확인 (4시간 간격 체크)"""
+        """4시간 간격 체크 후 업데이트 있으면 GUI 스레드에서 알림."""
         import threading
 
         def check():
@@ -48,12 +48,11 @@ class KakaoA11yApp(wx.App):
         thread.start()
 
     def _show_update_notification(self, info) -> None:
-        """업데이트 알림 표시 (GUI 스레드)"""
+        """업데이트 알림 표시 후 사용자 수락 시 업데이트 플로우 시작."""
         from .update_dialogs import run_update_flow, show_update_available
 
         if show_update_available(self.frame, info):
             run_update_flow(self.frame, info)
 
     def OnExit(self) -> int:
-        """앱 종료"""
         return 0
