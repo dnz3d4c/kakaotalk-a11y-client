@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-01-09
+
+### Added
+- 자동 문제 감지 시스템: 발화 실패/채팅방 진입 실패 시 자동 트리 덤프
+  - `focus_speak_fail`: compareElements 오판, 빈 Name 감지
+  - `enter_fail`: 채팅방 진입 실패 원인 기록
+
+### Improved
+- 채팅방 목록 탐색 시 중복 발화 문제 개선 (Name + 시간 기반 필터링 600ms)
+- FocusMonitor 종료 시 COM 오류 방지 (_cleanup_pending 플래그)
+- 디버그 로그에 밀리초 타임스탬프 추가
+
 ## [0.5.0] - 2026-01-07
 
 점자 디스플레이 지원 및 디버그 도구 개선.

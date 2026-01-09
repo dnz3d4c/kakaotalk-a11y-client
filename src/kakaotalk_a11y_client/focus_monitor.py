@@ -33,6 +33,7 @@ from .config import (
 from .utils.uia_cache_request import get_focused_with_cache
 from .utils.uia_events import FocusMonitor, FocusEvent
 from .utils.debug import get_logger
+from .utils.debug_tools import debug_tools
 
 if TYPE_CHECKING:
     from .mode_manager import ModeManager
@@ -304,7 +305,18 @@ class FocusMonitorService:
             name = control.Name or ""
 
             if control_type == 'ListItemControl':
-                if name and name != self._last_focused_name:
+                if not name:
+                    # 빈 Name 감지 - 자동 덤프
+                    log.debug("ListItem Name 비어있음, 발화 스킵")
+                    debug_tools.dump_on_condition('focus_speak_fail', True, {
+                        'reason': 'empty_name',
+                        'control_type': control_type,
+                    })
+                elif name == self._last_focused_name:
+                    # 중복 Name - TRACE 로그만
+                    log.trace(f"ListItem 중복 Name: {name[:20]}")
+                else:
+                    # 정상 경로
                     self._last_focused_name = name
                     self._speak_item(name, control_type)
                     # chat_navigator에 현재 항목 저장 (컨텍스트 메뉴용)

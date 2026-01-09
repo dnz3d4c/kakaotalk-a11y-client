@@ -44,10 +44,12 @@ class DebugConfig:
 
     # 활성화된 자동 분석 시나리오
     auto_analyze_scenarios: Set[str] = field(default_factory=lambda: {
-        'menu_fail',      # 컨텍스트 메뉴 실패 시
-        'empty_list',     # 빈 리스트 감지 시
-        'focus_lost',     # 포커스 유실 시
-        'slow_operation', # 느린 작업 감지 시
+        'menu_fail',        # 컨텍스트 메뉴 실패 시
+        'empty_list',       # 빈 리스트 감지 시
+        'focus_lost',       # 포커스 유실 시
+        'slow_operation',   # 느린 작업 감지 시
+        'focus_speak_fail', # 포커스 변경인데 발화 안 됨
+        'enter_fail',       # 채팅방 진입 실패
     })
 
 

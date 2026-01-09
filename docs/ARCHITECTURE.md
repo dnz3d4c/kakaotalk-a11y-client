@@ -718,6 +718,17 @@ Get-Content C:\project\kakaotalk-a11y\client\logs\debug.log -Tail 50
 | `핫키 매니저` | 핫키 이벤트 |
 | `Speech` | 음성 발화 (text, interrupt 파라미터) |
 
+### 자동 감지 시스템 (v0.5.1+)
+
+문제 발생 시 자동으로 UIA 트리 덤프를 생성합니다. 수동 Ctrl+Shift+D 없이도 원인 분석 가능.
+
+| 시나리오 | 트리거 조건 | 덤프 위치 |
+|----------|------------|----------|
+| `focus_speak_fail` | compareElements 오판, 빈 Name 감지 | `logs/` |
+| `enter_fail` | 채팅방 진입 실패 | `logs/` |
+
+**활성화**: `--debug` 모드에서 자동 동작
+
 ### 음성 발화 정책
 
 - **기본 interrupt=False**: NVDA 자동 발화와 충돌 방지

@@ -9,8 +9,13 @@ from dataclasses import dataclass
 
 import uiautomation as auto
 
-from ..config import TIMING_EVENT_PUMP_INTERVAL
+from ..config import (
+    TIMING_EVENT_PUMP_INTERVAL,
+    TIMING_FOCUS_DEDUP_WINDOW,
+    FOCUS_DEDUP_HISTORY_SIZE,
+)
 from .debug import get_logger
+from .debug_tools import debug_tools
 from ..window_finder import is_kakaotalk_window, is_kakaotalk_menu_window
 
 # COM 인터페이스 import (uia_events에서)
@@ -63,11 +68,13 @@ class FocusMonitor:
         self._callback: Optional[Callable[[FocusEvent], None]] = None
         self._last_focus: Optional[auto.Control] = None
         self._last_focus_element = None  # COM 요소 (compareElements용)
+        self._recent_names: list[tuple[str, float]] = []  # (name, timestamp) - 중복 필터링용
         self._lock = threading.Lock()
 
         # COM 객체
         self._uia = None
         self._event_handler = None
+        self._cleanup_pending = False  # cleanup 진입 신호
 
         log.trace(f"FocusMonitor 초기화: comtypes={HAS_COMTYPES}")
 
@@ -147,6 +154,9 @@ class FocusMonitor:
         except Exception as e:
             log.error(f"이벤트 루프 오류: {e}")
         finally:
+            self._cleanup_pending = True  # 콜백 차단 신호
+            pythoncom.PumpWaitingMessages()  # pending 처리
+            time.sleep(0.05)  # 여유
             self._cleanup_event_handler()
             pythoncom.CoUninitialize()
             log.debug("이벤트 루프 종료")
@@ -162,9 +172,29 @@ class FocusMonitor:
             self._uia = None
             self._event_handler = None
 
+    def _is_recent_duplicate(self, name: str, now: float) -> bool:
+        """최근 발화 Name 기반 중복 체크. 50ms 내 같은 Name은 중복."""
+        # 만료된 항목 제거
+        self._recent_names = [
+            (n, t) for n, t in self._recent_names
+            if now - t < TIMING_FOCUS_DEDUP_WINDOW
+        ]
+
+        # 중복 체크
+        for hist_name, _ in self._recent_names:
+            if hist_name == name:
+                return True
+
+        # 히스토리에 추가
+        self._recent_names.append((name, now))
+        if len(self._recent_names) > FOCUS_DEDUP_HISTORY_SIZE:
+            self._recent_names.pop(0)
+
+        return False
+
     def _on_focus_event(self, sender) -> None:
         """카카오톡 창만 처리. compareElements로 중복 필터링."""
-        if not self._running:
+        if not self._running or self._cleanup_pending:
             return
 
         try:
@@ -185,15 +215,45 @@ class FocusMonitor:
 
             # compareElements로 중복 필터링 (NVDA 패턴)
             with self._lock:
+                if not self._uia:
+                    return  # cleanup 중이면 무시
                 if self._last_focus_element:
                     try:
                         is_same = self._uia.CompareElements(sender, self._last_focus_element)
                         if is_same:
-                            return  # 중복 무시
+                            # 2차 검증: Name으로 정말 같은지 확인
+                            try:
+                                sender_name = sender.CurrentName or ""
+                                last_name = self._last_focus_element.CurrentName or ""
+                                if sender_name != last_name:
+                                    # compareElements 오판 감지!
+                                    log.warning(f"compareElements 오판: sender='{sender_name[:30]}', last='{last_name[:30]}'")
+                                    debug_tools.dump_on_condition('focus_speak_fail', True, {
+                                        'reason': 'compareElements_mismatch',
+                                        'sender_name': sender_name[:100],
+                                        'last_name': last_name[:100],
+                                    })
+                                    # 오판이므로 처리 계속 (return 안 함)
+                                else:
+                                    log.trace(f"compareElements 중복: '{sender_name[:30]}'")
+                                    return  # 정상 중복
+                            except Exception:
+                                return  # Name 조회 실패 시 중복으로 처리
                     except Exception:
                         pass
 
                 self._last_focus_element = sender
+
+            # 2차: Name + 시간 기반 중복 체크 (카카오톡 A→B→A 버그 대응)
+            try:
+                sender_name = sender.CurrentName or ""
+                if sender_name:
+                    now = time.time()
+                    if self._is_recent_duplicate(sender_name, now):
+                        log.trace(f"Name 기반 중복: '{sender_name[:30]}'")
+                        return
+            except Exception:
+                pass
 
             # uiautomation Control로 변환
             focused = auto.Control(element=sender)

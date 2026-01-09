@@ -70,7 +70,8 @@ class Logger:
 
     def _log(self, level: LogLevel, msg: str) -> None:
         if level >= self.level:
-            prefix = f"[{level.name}:{self.name}]"
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]  # HH:MM:SS.mmm
+            prefix = f"[{timestamp}][{level.name}:{self.name}]"
             line = f"{prefix} {msg}"
 
             # 콘솔 출력

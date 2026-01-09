@@ -72,6 +72,10 @@ TIMING_NAVIGATION_GRACE = 1.0             # 메뉴 닫힘 후 MessageMonitor 유
 
 TIMING_EVENT_PUMP_INTERVAL = 0.05         # 이벤트 펌프 폴링 간격
 
+# 포커스 중복 필터링 (카카오톡 A→B→A→B 버그 대응)
+TIMING_FOCUS_DEDUP_WINDOW = 0.6           # 600ms 내 같은 Name은 중복 (A→A 왕복 ~570ms)
+FOCUS_DEDUP_HISTORY_SIZE = 5              # 최근 N개 Name 기억
+
 # =============================================================================
 # 캐시 설정
 # =============================================================================

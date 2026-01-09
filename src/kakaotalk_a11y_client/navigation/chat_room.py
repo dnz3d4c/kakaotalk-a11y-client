@@ -32,6 +32,7 @@ class ChatRoomNavigator:
 
     def enter_chat_room(self, hwnd: int) -> bool:
         """채팅방 진입. COM 초기화 후 메시지 목록 로드."""
+        fail_reason = None
         try:
             # COM 초기화 (Adapter가 스레드별 관리)
             self._uia.init_com()
@@ -39,16 +40,26 @@ class ChatRoomNavigator:
             self._hwnd = hwnd  # 캐시 키용 저장
             self.chat_control = self._uia.get_control_from_handle(hwnd)
             if not self.chat_control:
+                fail_reason = 'no_chat_control'
                 return False
 
             if not self.refresh_messages():
+                fail_reason = 'refresh_failed'
                 return False
 
             self.is_active = True
             return True
 
-        except Exception:
+        except Exception as e:
+            fail_reason = f'exception: {e}'
             return False
+        finally:
+            # 진입 실패 시 자동 덤프
+            if fail_reason:
+                debug_tools.dump_on_condition('enter_fail', True, {
+                    'hwnd': hwnd,
+                    'reason': fail_reason,
+                })
 
     def exit_chat_room(self):
         """상태 초기화 및 COM 해제."""
