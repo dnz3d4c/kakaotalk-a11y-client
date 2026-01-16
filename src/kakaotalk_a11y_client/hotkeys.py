@@ -166,13 +166,13 @@ class HotkeyManager:
                     if not result:
                         error_code = ctypes.GetLastError()
                         if error_code == 1409:  # ERROR_HOTKEY_ALREADY_REGISTERED
-                            log.warning(f"핫키 이미 등록됨 (다른 프로그램): {config_key}")
+                            log.warning(f"hotkey already registered (other program): {config_key}")
                         else:
-                            log.error(f"핫키 등록 실패: {config_key}, 오류 코드: {error_code}")
+                            log.error(f"hotkey registration failed: {config_key}, error code: {error_code}")
                         if hotkey_id == HOTKEY_ID_SCAN:
                             return
                     else:
-                        log.debug(f"핫키 등록: {config_key} (mod={modifiers}, vk={vk})")
+                        log.debug(f"hotkey registered: {config_key} (mod={modifiers}, vk={vk})")
 
         msg = wintypes.MSG()
         while self._running:
@@ -183,7 +183,7 @@ class HotkeyManager:
             if msg.message == win32con.WM_HOTKEY:
                 hotkey_id = msg.wParam
                 if hotkey_id == HOTKEY_ID_EXIT:
-                    log.info("종료 단축키 감지")
+                    log.info("exit hotkey detected")
                     os.kill(os.getpid(), signal.SIGINT)
                 else:
                     callback = self._callbacks.get(hotkey_id)

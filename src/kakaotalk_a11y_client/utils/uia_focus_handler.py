@@ -4,19 +4,15 @@
 
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 from dataclasses import dataclass
 
 import uiautomation as auto
 
-from ..config import (
-    TIMING_EVENT_PUMP_INTERVAL,
-    TIMING_FOCUS_DEDUP_WINDOW,
-    FOCUS_DEDUP_HISTORY_SIZE,
-)
+from ..config import TIMING_EVENT_PUMP_INTERVAL
 from .debug import get_logger
-from .debug_tools import debug_tools
 from ..window_finder import is_kakaotalk_window, is_kakaotalk_menu_window
+from .event_coalescer import EventCoalescer
 
 # COM 인터페이스 import (uia_events에서)
 from .uia_events import (
@@ -37,23 +33,21 @@ class FocusEvent:
 
 
 class FocusChangedHandler(COMObject):
-    """FocusChanged COM 콜백. 카카오톡 창 외 이벤트 무시."""
+    """FocusChanged COM 콜백."""
 
     if HAS_COMTYPES:
         _com_interfaces_ = [IUIAutomationFocusChangedEventHandler]
 
-    def __init__(self, callback, uia_client=None, last_element_ref=None):
+    def __init__(self, callback):
         super().__init__()
         self._callback = callback
-        self._uia = uia_client
-        self._last_element_ref = last_element_ref
 
     def HandleFocusChangedEvent(self, sender):
         if self._callback and sender:
             try:
                 self._callback(sender)
             except Exception as e:
-                log.trace(f"FocusChanged 콜백 오류: {e}")
+                log.trace(f"FocusChanged callback error: {e}")
 
 
 class FocusMonitor:
@@ -67,25 +61,35 @@ class FocusMonitor:
         self._thread: Optional[threading.Thread] = None
         self._callback: Optional[Callable[[FocusEvent], None]] = None
         self._last_focus: Optional[auto.Control] = None
-        self._last_focus_element = None  # COM 요소 (compareElements용)
-        self._recent_names: list[tuple[str, float]] = []  # (name, timestamp) - 중복 필터링용
         self._lock = threading.Lock()
+
+        # Phase 1: CompareElements 대체
+        self._last_runtime_id: Optional[Tuple[int, ...]] = None
+        self._last_event_time: float = 0.0  # 30ms 디바운싱용
+
+        # Phase 2: EventCoalescer (NVDA 스타일 이벤트 병합)
+        self._coalescer: Optional[EventCoalescer] = None
 
         # COM 객체
         self._uia = None
         self._event_handler = None
-        self._cleanup_pending = False  # cleanup 진입 신호
 
-        log.trace(f"FocusMonitor 초기화: comtypes={HAS_COMTYPES}")
+        log.trace(f"FocusMonitor initialized: comtypes={HAS_COMTYPES}")
 
     def start(self, on_focus_changed: Callable[[FocusEvent], None]) -> bool:
         """모니터링 시작. 성공 시 True."""
         if self._running:
-            log.warning("이미 실행 중")
+            log.warning("already running")
             return False
 
         self._callback = on_focus_changed
         self._running = True
+
+        # Phase 2: EventCoalescer 시작 (20ms 배치 처리)
+        self._coalescer = EventCoalescer(
+            flush_callback=self._process_focus_event,
+            flush_interval=0.02  # 20ms
+        )
 
         success = self._start_event_based()
         if not success:
@@ -98,10 +102,15 @@ class FocusMonitor:
         """모니터링 중지"""
         self._running = False
 
+        # Phase 2: EventCoalescer 중지
+        if self._coalescer:
+            self._coalescer.stop()
+            self._coalescer = None
+
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-        log.debug("FocusMonitor 중지됨")
+        log.debug("FocusMonitor stopped")
 
     def _start_event_based(self) -> bool:
         """이벤트 스레드 시작 (COM 초기화 + AddFocusChangedEventHandler)."""
@@ -116,11 +125,11 @@ class FocusMonitor:
                 name="FocusMonitor-Event"
             )
             self._thread.start()
-            log.info("FocusChanged 이벤트 모드 시작")
+            log.info("FocusChanged event mode started")
             return True
 
         except Exception as e:
-            log.error(f"이벤트 모드 초기화 실패: {e}")
+            log.error(f"event mode initialization failed: {e}")
             return False
 
     def _event_loop(self) -> None:
@@ -134,9 +143,7 @@ class FocusMonitor:
 
             # FocusChanged 이벤트 핸들러 생성 및 등록
             self._event_handler = FocusChangedHandler(
-                callback=self._on_focus_event,
-                uia_client=self._uia,
-                last_element_ref=lambda: self._last_focus_element
+                callback=self._on_focus_event
             )
 
             self._uia.AddFocusChangedEventHandler(
@@ -144,7 +151,7 @@ class FocusMonitor:
                 self._event_handler
             )
 
-            log.info("AddFocusChangedEventHandler 등록 완료")
+            log.info("AddFocusChangedEventHandler registered")
 
             # 메시지 펌프 루프
             while self._running:
@@ -152,131 +159,88 @@ class FocusMonitor:
                 time.sleep(TIMING_EVENT_PUMP_INTERVAL)
 
         except Exception as e:
-            log.error(f"이벤트 루프 오류: {e}")
+            log.error(f"event loop error: {e}")
         finally:
-            self._cleanup_pending = True  # 콜백 차단 신호
-            pythoncom.PumpWaitingMessages()  # pending 처리
-            time.sleep(0.05)  # 여유
             self._cleanup_event_handler()
             pythoncom.CoUninitialize()
-            log.debug("이벤트 루프 종료")
+            log.debug("event loop terminated")
 
     def _cleanup_event_handler(self) -> None:
         try:
             if self._event_handler and self._uia:
                 self._uia.RemoveFocusChangedEventHandler(self._event_handler)
-                log.debug("FocusChanged 핸들러 해제 완료")
+                log.debug("FocusChanged handler unregistered")
         except Exception as e:
-            log.trace(f"핸들러 해제 오류: {e}")
+            log.trace(f"handler unregister error: {e}")
         finally:
             self._uia = None
             self._event_handler = None
 
-    def _is_recent_duplicate(self, name: str, now: float) -> bool:
-        """최근 발화 Name 기반 중복 체크. 50ms 내 같은 Name은 중복."""
-        # 만료된 항목 제거
-        self._recent_names = [
-            (n, t) for n, t in self._recent_names
-            if now - t < TIMING_FOCUS_DEDUP_WINDOW
-        ]
-
-        # 중복 체크
-        for hist_name, _ in self._recent_names:
-            if hist_name == name:
-                return True
-
-        # 히스토리에 추가
-        self._recent_names.append((name, now))
-        if len(self._recent_names) > FOCUS_DEDUP_HISTORY_SIZE:
-            self._recent_names.pop(0)
-
-        return False
-
     def _on_focus_event(self, sender) -> None:
-        """카카오톡 창만 처리. compareElements로 중복 필터링."""
-        if not self._running or self._cleanup_pending:
+        """COM 콜백. 1차 필터링(디바운싱/중복체크) → 2차 coalescer."""
+        if not self._running or not self._coalescer:
             return
 
         try:
+            # 1. 시간 기반 디바운싱 (30ms) - Phase 1에서 효과 입증
+            now = time.time()
+            if now - self._last_event_time < 0.03:
+                return
+            self._last_event_time = now
+
             import win32gui
-            # 창 핸들 확인 - 카카오톡 창 외 즉시 무시
-            # 자식 요소는 hwnd=0일 수 있으므로 포그라운드 창 확인
+            # 2. 창 핸들 확인 - 카카오톡 창 외 즉시 무시
             hwnd = sender.CurrentNativeWindowHandle
             if not hwnd:
-                # 현재 포그라운드 창이 카카오톡인지 확인
                 fg_hwnd = win32gui.GetForegroundWindow()
                 if not fg_hwnd or not (is_kakaotalk_window(fg_hwnd) or is_kakaotalk_menu_window(fg_hwnd)):
                     return
-                # 포그라운드가 카카오톡이면 처리 계속
                 hwnd = fg_hwnd
             elif not (is_kakaotalk_window(hwnd) or is_kakaotalk_menu_window(hwnd)):
-                log.trace(f"FocusChanged 스킵: hwnd={hwnd} (비카카오톡)")
                 return
 
-            # compareElements로 중복 필터링 (NVDA 패턴)
-            with self._lock:
-                if not self._uia:
-                    return  # cleanup 중이면 무시
-                if self._last_focus_element:
-                    try:
-                        is_same = self._uia.CompareElements(sender, self._last_focus_element)
-                        if is_same:
-                            # 2차 검증: Name으로 정말 같은지 확인
-                            try:
-                                sender_name = sender.CurrentName or ""
-                                last_name = self._last_focus_element.CurrentName or ""
-                                if sender_name != last_name:
-                                    # compareElements 오판 감지!
-                                    log.warning(f"compareElements 오판: sender='{sender_name[:30]}', last='{last_name[:30]}'")
-                                    debug_tools.dump_on_condition('focus_speak_fail', True, {
-                                        'reason': 'compareElements_mismatch',
-                                        'sender_name': sender_name[:100],
-                                        'last_name': last_name[:100],
-                                    })
-                                    # 오판이므로 처리 계속 (return 안 함)
-                                else:
-                                    log.trace(f"compareElements 중복: '{sender_name[:30]}'")
-                                    return  # 정상 중복
-                            except Exception:
-                                return  # Name 조회 실패 시 중복으로 처리
-                    except Exception:
-                        pass
-
-                self._last_focus_element = sender
-
-            # 2차: Name + 시간 기반 중복 체크 (카카오톡 A→B→A 버그 대응)
+            # 3. RuntimeID 기반 중복 체크 (CompareElements 대체)
             try:
-                sender_name = sender.CurrentName or ""
-                if sender_name:
-                    now = time.time()
-                    if self._is_recent_duplicate(sender_name, now):
-                        log.trace(f"Name 기반 중복: '{sender_name[:30]}'")
-                        return
+                runtime_id = tuple(sender.GetRuntimeId())
             except Exception:
-                pass
+                runtime_id = (id(sender),)  # 폴백
 
-            # uiautomation Control로 변환
+            if runtime_id == self._last_runtime_id:
+                return
+            self._last_runtime_id = runtime_id
+
+            # 4. Control 변환
             focused = auto.Control(element=sender)
             if not focused:
                 return
 
-            with self._lock:
-                self._last_focus = focused
-
+            # 5. FocusEvent 생성 + coalescer에 추가
             event = FocusEvent(
                 control=focused,
-                timestamp=time.time(),
+                timestamp=now,
                 source="event"
             )
 
-            if self._callback:
-                try:
-                    self._callback(event)
-                except Exception as e:
-                    log.error(f"콜백 오류: {e}")
+            # Phase 2: coalescer가 배치로 처리 (같은 키는 최신만 유지)
+            key = (runtime_id, "focus")
+            self._coalescer.add(key, event)
 
         except Exception as e:
-            log.error(f"포커스 이벤트 처리 오류: {e}")
+            log.error(f"focus event processing error: {e}")
+
+    def _process_focus_event(self, event: FocusEvent) -> None:
+        """coalescer가 호출. 실제 콜백 실행."""
+        if not self._running:
+            return
+
+        try:
+            with self._lock:
+                self._last_focus = event.control
+
+            if self._callback:
+                self._callback(event)
+        except Exception as e:
+            log.error(f"callback error: {e}")
 
     @property
     def is_running(self) -> bool:
@@ -295,12 +259,15 @@ class FocusMonitor:
 
 # 싱글톤 인스턴스 (필요 시 생성)
 _focus_monitor: Optional[FocusMonitor] = None
+_focus_monitor_lock = threading.Lock()
 
 
 def get_focus_monitor() -> FocusMonitor:
     global _focus_monitor
     if _focus_monitor is None:
-        _focus_monitor = FocusMonitor()
+        with _focus_monitor_lock:
+            if _focus_monitor is None:  # Double-check
+                _focus_monitor = FocusMonitor()
     return _focus_monitor
 
 

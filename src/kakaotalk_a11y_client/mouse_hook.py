@@ -56,7 +56,7 @@ class MouseHook:
             last_name = self._get_last_focused_name()
             if last_name and self._is_non_message_item(last_name):
                 preview = last_name[:30] + "..." if len(last_name) > 30 else last_name
-                log.trace(f"비메시지 항목 우클릭 차단: {preview}")
+                log.trace(f"right-click blocked on non-message item: {preview}")
                 return 1  # 이벤트 차단
 
         # 통과
@@ -74,15 +74,15 @@ class MouseHook:
             0
         )
         if self._hook_id:
-            log.debug("마우스 훅 설치 완료")
+            log.debug("mouse hook installed")
             return True
         else:
             error_code = ctypes.GetLastError()
-            log.error(f"마우스 훅 설치 실패: 오류 코드 {error_code}")
+            log.error(f"mouse hook install failed: error code {error_code}")
             return False
 
     def uninstall(self) -> None:
         if self._hook_id:
             user32.UnhookWindowsHookEx(self._hook_id)
             self._hook_id = None
-            log.debug("마우스 훅 해제 완료")
+            log.debug("mouse hook uninstalled")

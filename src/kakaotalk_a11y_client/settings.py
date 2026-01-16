@@ -69,9 +69,9 @@ class Settings:
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     self._data = json.load(f)
-                log.debug(f"설정 로드: {self.path}")
+                log.debug(f"settings loaded: {self.path}")
             except (json.JSONDecodeError, OSError) as e:
-                log.warning(f"설정 로드 실패, 기본값 사용: {e}")
+                log.warning(f"settings load failed, using defaults: {e}")
                 self._data = {}
         else:
             self._data = {}
@@ -97,10 +97,10 @@ class Settings:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.path, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, ensure_ascii=False, indent=2)
-            log.debug(f"설정 저장: {self.path}")
+            log.debug(f"settings saved: {self.path}")
             return True
         except OSError as e:
-            log.error(f"설정 저장 실패: {e}")
+            log.error(f"settings save failed: {e}")
             return False
 
     def get(self, key: str, default: Any = None) -> Any:

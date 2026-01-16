@@ -76,11 +76,11 @@ class FocusHandler(BaseHandler):
                 self._com_handler
             )
 
-            log.debug("FocusChanged 핸들러 등록 완료")
+            log.debug("FocusChanged handler registered")
             return True
 
         except Exception as e:
-            log.error(f"FocusChanged 핸들러 등록 실패: {e}")
+            log.error(f"FocusChanged handler registration failed: {e}")
             self._uia = None
             self._com_handler = None
             return False
@@ -90,9 +90,9 @@ class FocusHandler(BaseHandler):
         try:
             if self._com_handler and self._uia:
                 self._uia.RemoveFocusChangedEventHandler(self._com_handler)
-                log.debug("FocusChanged 핸들러 해제 완료")
+                log.debug("FocusChanged handler unregistered")
         except Exception as e:
-            log.trace(f"FocusChanged 핸들러 해제 오류: {e}")
+            log.trace(f"FocusChanged handler unregister error: {e}")
         finally:
             self._uia = None
             self._com_handler = None
@@ -151,4 +151,4 @@ class FocusHandler(BaseHandler):
             self._emit(event)
 
         except Exception as e:
-            log.trace(f"FocusChanged 처리 오류: {e}")
+            log.trace(f"FocusChanged processing error: {e}")

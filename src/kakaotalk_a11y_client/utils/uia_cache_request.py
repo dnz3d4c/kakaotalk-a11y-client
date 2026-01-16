@@ -94,7 +94,7 @@ class CacheRequestManager:
         self._initialized = True
 
         if not HAS_CACHE_REQUEST:
-            log.debug("comtypes 미설치 - CacheRequest 비활성화")
+            log.debug("comtypes not installed - CacheRequest disabled")
             return False
 
         try:
@@ -107,11 +107,11 @@ class CacheRequestManager:
             self._cache_request.AddProperty(UIA_ClassNamePropertyId)
             self._cache_request.AddProperty(UIA_AutomationIdPropertyId)
 
-            log.info("CacheRequest 초기화 성공")
+            log.info("CacheRequest initialized")
             return True
 
         except Exception as e:
-            log.warning(f"CacheRequest 초기화 실패: {e}")
+            log.warning(f"CacheRequest initialization failed: {e}")
             self._uia = None
             return False
 

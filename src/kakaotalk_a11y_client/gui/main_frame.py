@@ -2,6 +2,8 @@
 # Copyright 2025-2026 dnz3d4c
 """메인 프레임 - 숨겨진 상태로 wx.App 유지"""
 
+import threading
+
 import wx
 from typing import TYPE_CHECKING
 
@@ -47,9 +49,8 @@ class MainFrame(wx.Frame):
         self._settings_dialog = None
 
     def check_for_update(self, manual: bool = False) -> None:
-        """업데이트 확인. manual=True면 결과 없을 때도 메시지박스 표시."""
-        from ..updater import check_for_update, is_frozen
-        from .update_dialogs import run_update_flow, show_update_available
+        """업데이트 확인. HTTP 요청을 별도 스레드에서 수행."""
+        from ..updater import is_frozen
 
         # 개발 환경에서는 동작 안함
         if not is_frozen():
@@ -62,7 +63,19 @@ class MainFrame(wx.Frame):
                 )
             return
 
-        info = check_for_update()
+        def check_background():
+            from ..updater import check_for_update as do_check
+
+            info = do_check()
+            wx.CallAfter(self._on_update_check_complete, info, manual)
+
+        thread = threading.Thread(target=check_background, daemon=True)
+        thread.start()
+
+    def _on_update_check_complete(self, info, manual: bool) -> None:
+        """업데이트 확인 완료 후 GUI 스레드에서 결과 처리."""
+        from .update_dialogs import run_update_flow, show_update_available
+
         if not info:
             if manual:
                 wx.MessageBox(

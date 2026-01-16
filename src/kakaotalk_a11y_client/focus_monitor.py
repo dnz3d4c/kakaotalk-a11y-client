@@ -33,7 +33,6 @@ from .config import (
 from .utils.uia_cache_request import get_focused_with_cache
 from .utils.uia_events import FocusMonitor, FocusEvent
 from .utils.debug import get_logger
-from .utils.debug_tools import debug_tools
 
 if TYPE_CHECKING:
     from .mode_manager import ModeManager
@@ -71,7 +70,9 @@ class FocusMonitorService:
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
-        self._last_focused_name: Optional[str] = None
+        self._last_focused_name: Optional[str] = None  # MouseHook 호환용 유지
+        self._last_focused_id: Optional[tuple] = None  # RuntimeId 기반 중복 체크
+        self._last_focused_lock = threading.Lock()
         self._focus_monitor: Optional[FocusMonitor] = None
 
     @property
@@ -81,7 +82,8 @@ class FocusMonitorService:
     @property
     def last_focused_name(self) -> Optional[str]:
         """MouseHook에서 비메시지 항목 판단용으로 사용."""
-        return self._last_focused_name
+        with self._last_focused_lock:
+            return self._last_focused_name
 
     def start(self) -> None:
         """FocusMonitor + 폴링 스레드 시작."""
@@ -90,7 +92,7 @@ class FocusMonitorService:
         # FocusMonitor 시작 (이벤트 기반 ListItem/TabItem 읽기)
         self._focus_monitor = FocusMonitor()
         self._focus_monitor.start(on_focus_changed=self._on_focus_event)
-        log.debug(f"FocusMonitor 시작 (mode={self._focus_monitor.get_stats()['mode']})")
+        log.debug(f"FocusMonitor started (mode={self._focus_monitor.get_stats()['mode']})")
 
         # 폴링 스레드 시작 (메뉴/채팅방 감지)
         self._thread = threading.Thread(
@@ -98,7 +100,7 @@ class FocusMonitorService:
             daemon=True
         )
         self._thread.start()
-        log.debug("포커스 모니터 시작")
+        log.debug("focus monitor started")
 
     def stop(self) -> None:
         """스레드 종료. 최대 2초 대기 후 강제 진행."""
@@ -108,23 +110,23 @@ class FocusMonitorService:
         if self._focus_monitor:
             self._focus_monitor.stop()
             self._focus_monitor = None
-            log.debug("FocusMonitor 종료")
+            log.debug("FocusMonitor stopped")
 
         if self._thread and self._thread.is_alive():
             # 1차 대기 (1초)
             self._thread.join(timeout=1.0)
 
             if self._thread.is_alive():
-                log.debug("focus monitor 스레드 1차 대기 타임아웃, 재시도")
+                log.debug("focus monitor thread first wait timeout, retrying")
                 self._running = False
                 # 2차 대기 (1초)
                 self._thread.join(timeout=1.0)
 
                 if self._thread.is_alive():
-                    log.debug("focus monitor 스레드 종료 실패 - 강제 진행")
+                    log.debug("focus monitor thread stop failed - forcing exit")
 
         self._thread = None
-        log.debug("포커스 모니터 종료")
+        log.debug("focus monitor stopped")
 
     def _monitor_loop(self) -> None:
         """메뉴/채팅방 감지 + 모드 전환. 카카오톡 비활성 시 CPU 절약."""
@@ -145,12 +147,18 @@ class FocusMonitorService:
                     # 별도 스레드에서 COM 초기화 필요
                     self._uia.init_com()
                     try:
+                        # 기존 워밍업
                         _ = self._uia.get_focused_control()
-                        log.debug("UIA 캐시 워밍업 완료")
+
+                        # CacheRequestManager 프리로드 추가
+                        from .utils.uia_cache_request import get_cache_manager
+                        get_cache_manager()  # 싱글톤 초기화
+
+                        log.debug("UIA cache warmup completed")
                     finally:
                         self._uia.uninit_com()
                 except Exception as e:
-                    log.warning(f"UIA 워밍업 실패: {e}")
+                    log.warning(f"UIA warmup failed: {e}")
                 finally:
                     uia_ready.set()
 
@@ -161,10 +169,10 @@ class FocusMonitorService:
             while self._running:
                 elapsed = time.time() - start_time
                 if uia_ready.is_set():
-                    log.debug(f"UIA 워밍업 완료, {elapsed:.2f}초 소요")
+                    log.debug(f"UIA warmup completed in {elapsed:.2f}s")
                     break
                 if elapsed >= max_warmup:
-                    log.warning(f"UIA 워밍업 타임아웃 ({max_warmup}초)")
+                    log.warning(f"UIA warmup timeout ({max_warmup}s)")
                     break
                 time.sleep(0.1)
 
@@ -180,7 +188,7 @@ class FocusMonitorService:
                     first_entry = not self._mode_manager.in_context_menu_mode
                     if first_entry:
                         self._mode_manager.enter_context_menu_mode(self._message_monitor)
-                        log.trace(f"메뉴 모드 자동 진입 (menu_hwnd={menu_hwnd})")
+                        log.trace(f"menu mode auto-entered (menu_hwnd={menu_hwnd})")
 
                     # grace period 갱신
                     self._mode_manager.update_menu_closed_time()
@@ -190,25 +198,32 @@ class FocusMonitorService:
                         cached = get_focused_with_cache()
                         if cached and cached.control_type_name == 'MenuItemControl':
                             name = cached.name
-                            if name and name != self._last_focused_name:
-                                self._last_focused_name = name
+                            with self._last_focused_lock:
+                                if name and name != self._last_focused_name:
+                                    self._last_focused_name = name
+                                    should_speak = True
+                                else:
+                                    should_speak = False
+                            if should_speak:
                                 self._speak(name)
                         elif first_entry:
                             # 포커스 리다이렉트: 메뉴 컨테이너 포커스 시 첫 번째 메뉴 항목 읽기
                             first_item_name = self._get_first_menu_item_name(menu_hwnd)
                             if first_item_name:
-                                self._last_focused_name = first_item_name
+                                with self._last_focused_lock:
+                                    self._last_focused_name = first_item_name
                                 self._speak(first_item_name)
-                                log.trace(f"메뉴 첫 항목 리다이렉트: {first_item_name}")
+                                log.trace(f"menu first item redirect: {first_item_name}")
                     except Exception:
                         # COMError 등 발생 시 폴백: 첫 메뉴 항목 읽기 시도
                         if first_entry:
                             try:
                                 first_item_name = self._get_first_menu_item_name(menu_hwnd)
                                 if first_item_name:
-                                    self._last_focused_name = first_item_name
+                                    with self._last_focused_lock:
+                                        self._last_focused_name = first_item_name
                                     self._speak(first_item_name)
-                                    log.trace(f"메뉴 첫 항목 폴백: {first_item_name}")
+                                    log.trace(f"menu first item fallback: {first_item_name}")
                             except Exception:
                                 pass
 
@@ -222,8 +237,10 @@ class FocusMonitorService:
                         menu_grace = TIMING_MENU_GRACE_PERIOD
                         if self._mode_manager.should_exit_navigation_by_grace_period(menu_grace):
                             self._mode_manager.exit_context_menu_mode(self._message_monitor)
-                            self._last_focused_name = None  # 메뉴 종료 후 리셋 (중복 체크 방지)
-                            log.trace("메뉴 모드 자동 종료")
+                            with self._last_focused_lock:
+                                self._last_focused_name = None  # 메뉴 종료 후 리셋 (중복 체크 방지)
+                                self._last_focused_id = None
+                            log.trace("menu mode auto-exited")
                         else:
                             # grace period 동안은 나머지 코드 스킵 (_last_focused_name 리셋 방지)
                             time.sleep(TIMING_GRACE_POLL_INTERVAL)
@@ -240,8 +257,10 @@ class FocusMonitorService:
                     # 메뉴 모드 종료
                     if self._mode_manager.in_context_menu_mode:
                         self._mode_manager.exit_context_menu_mode(self._message_monitor)
-                        log.trace("메뉴 모드 자동 종료 (비카카오톡 창)")
-                    self._last_focused_name = None
+                        log.trace("menu mode auto-exited (non-KakaoTalk window)")
+                    with self._last_focused_lock:
+                        self._last_focused_name = None
+                        self._last_focused_id = None
                     time.sleep(TIMING_INACTIVE_POLL_INTERVAL)
                     continue
 
@@ -249,21 +268,21 @@ class FocusMonitorService:
                 is_chat = is_kakaotalk_chat_window(fg_hwnd)
                 current_trace_state = (fg_hwnd, is_chat, self._mode_manager.in_navigation_mode)
                 if current_trace_state != last_trace_state:
-                    log.trace(f"포커스 모니터: hwnd={fg_hwnd}, is_chat={is_chat}, nav_mode={self._mode_manager.in_navigation_mode}")
+                    log.trace(f"focus monitor: hwnd={fg_hwnd}, is_chat={is_chat}, nav_mode={self._mode_manager.in_navigation_mode}")
                     last_trace_state = current_trace_state
                 if is_chat:
                     # 메뉴 모드일 때는 채팅방 진입 로직 스킵 (CPU 스파이크 방지)
                     if self._mode_manager.in_context_menu_mode:
                         pass  # 메뉴 탐색 중에는 재진입 불필요
                     elif not self._mode_manager.in_navigation_mode or self._mode_manager.current_chat_hwnd != fg_hwnd:
-                        log.debug(f"채팅방 진입 시도: hwnd={fg_hwnd}")
+                        log.debug(f"attempting chat room entry: hwnd={fg_hwnd}")
                         self._mode_manager.enter_navigation_mode(
                             fg_hwnd,
                             self._chat_navigator,
                             self._message_monitor,
                             self._hotkey_manager,
                         )
-                        log.debug(f"채팅방 진입 결과: nav_mode={self._mode_manager.in_navigation_mode}")
+                        log.debug(f"chat room entry result: nav_mode={self._mode_manager.in_navigation_mode}")
 
                         # 채팅방 진입 성공 시 현재 포커스된 항목 읽기
                         if self._mode_manager.in_navigation_mode:
@@ -278,7 +297,7 @@ class FocusMonitorService:
                                 self._chat_navigator,
                             )
                         else:
-                            log.trace("메뉴 닫힘 grace period - MessageMonitor 유지")
+                            log.trace("menu closed grace period - keeping MessageMonitor")
 
                 # 4. ListItem/TabItem 읽기는 FocusMonitor에서 이벤트 기반으로 처리
 
@@ -305,97 +324,127 @@ class FocusMonitorService:
             name = control.Name or ""
 
             if control_type == 'ListItemControl':
-                if not name:
-                    # 빈 Name 감지 - 자동 덤프
-                    log.debug("ListItem Name 비어있음, 발화 스킵")
-                    debug_tools.dump_on_condition('focus_speak_fail', True, {
-                        'reason': 'empty_name',
-                        'control_type': control_type,
-                    })
-                elif name == self._last_focused_name:
-                    # 중복 Name - TRACE 로그만
-                    log.trace(f"ListItem 중복 Name: {name[:20]}")
-                else:
-                    # 정상 경로
-                    self._last_focused_name = name
+                # RuntimeId로 중복 체크 (같은 Name이라도 다른 요소면 발화)
+                runtime_id = getattr(control, 'RuntimeId', None)
+                with self._last_focused_lock:
+                    if runtime_id:
+                        should_speak = runtime_id != self._last_focused_id
+                    else:
+                        # RuntimeId 없으면 Name으로 폴백
+                        should_speak = name != self._last_focused_name
+                    if should_speak:
+                        self._last_focused_id = runtime_id
+                        self._last_focused_name = name  # MouseHook 호환
+                if should_speak and name:
                     self._speak_item(name, control_type)
                     # chat_navigator에 현재 항목 저장 (컨텍스트 메뉴용)
                     self._chat_navigator.current_focused_item = control
                     log.trace(f"[이벤트] ListItem: {name[:30]}...")
             elif control_type == 'TabItemControl':
-                if name and name != self._last_focused_name:
-                    self._last_focused_name = name
-                    # SelectionItemPattern으로 선택 상태 조회
-                    try:
-                        is_selected = control.GetSelectionItemPattern().IsSelected
-                        status = "선택됨" if is_selected else ""
-                        speak_text = f"{name} 탭 {status}".strip()
-                    except Exception:
-                        speak_text = f"{name} 탭"
+                # RuntimeId로 중복 체크
+                runtime_id = getattr(control, 'RuntimeId', None)
+                with self._last_focused_lock:
+                    if runtime_id:
+                        should_speak = runtime_id != self._last_focused_id
+                    else:
+                        should_speak = name != self._last_focused_name
+                    if should_speak:
+                        self._last_focused_id = runtime_id
+                        self._last_focused_name = name  # MouseHook 호환
+                if should_speak and name:
+                    # TabItem 포커스 = 대부분 선택 상태이므로 UIA 조회 생략
+                    speak_text = f"{name} 탭 선택됨"
                     self._speak_item(speak_text, control_type)
                     log.trace(f"[이벤트] TabItem: {name}")
             elif control_type == 'ListControl' and name == "메시지":
                 # 메시지 목록상자 포커스 시 마지막 메시지 읽기
                 self._speak_last_message(control)
         except Exception as e:
-            log.trace(f"포커스 이벤트 처리 오류: {e}")
+            log.trace(f"focus event handling error: {e}")
 
     def _speak_current_focus(self) -> None:
         """채팅방 진입 시 현재 포커스 강제 조회. 이벤트 누락 보완용."""
         try:
             cached = get_focused_with_cache()
             if not cached:
-                log.trace("현재 포커스 없음")
+                log.trace("no current focus")
                 return
 
             if cached.control_type_name != 'ListItemControl':
-                log.trace(f"포커스가 ListItem 아님: {cached.control_type_name}")
+                log.trace(f"focus is not ListItem: {cached.control_type_name}")
                 return
 
             name = cached.name or ""
             if not name.strip():
-                log.trace("포커스 항목 이름 없음")
+                log.trace("focused item has no name")
                 return
 
-            # 중복 방지
-            if name == self._last_focused_name:
-                return
+            # RuntimeId로 중복 체크
+            runtime_id = None
+            try:
+                if cached.raw_element:
+                    runtime_id = tuple(cached.raw_element.GetRuntimeId())
+            except Exception:
+                pass
 
-            self._last_focused_name = name
+            with self._last_focused_lock:
+                if runtime_id and runtime_id == self._last_focused_id:
+                    return
+                self._last_focused_id = runtime_id
+                self._last_focused_name = name  # MouseHook 호환
+
             self._speak(name)
 
             # chat_navigator에 현재 항목 저장 (컨텍스트 메뉴용)
             self._chat_navigator.current_focused_item = cached
 
-            log.debug(f"채팅방 진입 시 현재 항목: {name[:30]}...")
+            log.debug(f"current item on chat entry: {name[:30]}...")
 
         except Exception as e:
-            log.trace(f"현재 포커스 항목 읽기 실패: {e}")
+            log.trace(f"failed to read current focus item: {e}")
 
     def _speak_last_message(self, list_control) -> None:
         """메시지 목록상자 포커스 시 마지막 메시지 읽기."""
         try:
-            children = self._uia.get_direct_children(list_control)
+            children = None
+
+            # MessageListMonitor 캐시 활용 시도
+            if (self._message_monitor and
+                hasattr(self._message_monitor, '_list_monitor') and
+                self._message_monitor._list_monitor):
+                cached = getattr(self._message_monitor._list_monitor, 'initial_children', None)
+                if cached:
+                    children = cached
+                    log.trace("_speak_last_message: using cached children")
+
+            # 폴백: 동기 UIA 호출
             if not children:
-                log.trace("메시지 목록 비어있음")
+                children = self._uia.get_direct_children(list_control)
+                log.trace("_speak_last_message: sync query")
+
+            if not children:
+                log.trace("message list is empty")
                 return
 
             last_msg = children[-1]
             name = last_msg.Name or ""
             if not name.strip():
-                log.trace("마지막 메시지 이름 없음")
+                log.trace("last message has no name")
                 return
 
-            # 중복 방지
-            if name == self._last_focused_name:
-                return
+            # RuntimeId로 중복 체크
+            runtime_id = getattr(last_msg, 'RuntimeId', None)
+            with self._last_focused_lock:
+                if runtime_id and runtime_id == self._last_focused_id:
+                    return
+                self._last_focused_id = runtime_id
+                self._last_focused_name = name  # MouseHook 호환
 
-            self._last_focused_name = name
             self._speak(name)
             log.trace(f"[이벤트] 마지막 메시지: {name[:30]}...")
 
         except Exception as e:
-            log.trace(f"마지막 메시지 읽기 실패: {e}")
+            log.trace(f"failed to read last message: {e}")
 
     def _get_first_menu_item_name(self, menu_hwnd: int) -> Optional[str]:
         """메뉴 창의 첫 번째 항목 이름. 포커스 리다이렉트용."""
@@ -409,7 +458,7 @@ class FocusMonitorService:
             if first_item and self._uia.control_exists(first_item, max_seconds=0):
                 return first_item.Name
         except Exception as e:
-            log.trace(f"첫 메뉴 항목 조회 실패: {e}")
+            log.trace(f"failed to get first menu item: {e}")
         return None
 
     def _speak_item(self, name: str, control_type: str = "") -> None:

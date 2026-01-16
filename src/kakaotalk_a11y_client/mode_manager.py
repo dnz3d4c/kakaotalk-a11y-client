@@ -2,6 +2,7 @@
 # Copyright 2025-2026 dnz3d4c
 """모드 상태 관리 - 선택/네비게이션/메뉴 모드 전환"""
 
+import threading
 import time
 from typing import Optional, TYPE_CHECKING
 
@@ -19,6 +20,9 @@ class ModeManager:
     """모드 상태 관리자"""
 
     def __init__(self):
+        # 스레드 안전을 위한 락 (RLock: 중첩 호출 허용)
+        self._lock = threading.RLock()
+
         # 모드 플래그
         self._in_selection_mode = False
         self._in_navigation_mode = False
@@ -32,37 +36,46 @@ class ModeManager:
 
     @property
     def in_selection_mode(self) -> bool:
-        return self._in_selection_mode
+        with self._lock:
+            return self._in_selection_mode
 
     @property
     def in_navigation_mode(self) -> bool:
-        return self._in_navigation_mode
+        with self._lock:
+            return self._in_navigation_mode
 
     @property
     def in_context_menu_mode(self) -> bool:
-        return self._in_context_menu_mode
+        with self._lock:
+            return self._in_context_menu_mode
 
     @property
     def current_chat_hwnd(self) -> Optional[int]:
-        return self._current_chat_hwnd
+        with self._lock:
+            return self._current_chat_hwnd
 
     @property
     def menu_closed_time(self) -> float:
-        return self._menu_closed_time
+        with self._lock:
+            return self._menu_closed_time
 
     # === 선택 모드 ===
 
     def enter_selection_mode(self, hotkey_manager: "HotkeyManager") -> None:
         """ESC, 숫자키 핫키 등록."""
-        self._in_selection_mode = True
+        with self._lock:
+            self._in_selection_mode = True
+        # 외부 호출은 락 밖에서
         hotkey_manager.enable_selection_mode()
-        log.debug("선택 모드 진입")
+        log.debug("selection mode entered")
 
     def exit_selection_mode(self, hotkey_manager: "HotkeyManager") -> None:
         """ESC, 숫자키 핫키 해제."""
-        self._in_selection_mode = False
+        with self._lock:
+            self._in_selection_mode = False
+        # 외부 호출은 락 밖에서
         hotkey_manager.disable_selection_mode()
-        log.debug("선택 모드 종료")
+        log.debug("selection mode exited")
 
     # === 네비게이션 모드 ===
 
@@ -74,20 +87,24 @@ class ModeManager:
         hotkey_manager: "HotkeyManager",
     ) -> bool:
         """채팅방 진입 + MessageMonitor 시작. 선택 모드면 자동 종료."""
-        if self._in_navigation_mode and self._current_chat_hwnd == hwnd:
-            return True  # 이미 같은 채팅방에서 활성화됨
+        # 상태 체크 + 변경은 락 안에서
+        with self._lock:
+            if self._in_navigation_mode and self._current_chat_hwnd == hwnd:
+                return True  # 이미 같은 채팅방에서 활성화됨
+            should_exit_selection = self._in_selection_mode
 
-        # 상호 배제: 선택 모드 자동 종료
-        if self._in_selection_mode:
+        # 외부 호출은 락 밖에서 (RLock이므로 중첩 호출도 OK)
+        if should_exit_selection:
             self.exit_selection_mode(hotkey_manager)
 
-        # 채팅방 진입
+        # 채팅방 진입 (외부 호출)
         if chat_navigator.enter_chat_room(hwnd):
-            self._current_chat_hwnd = hwnd
-            self._in_navigation_mode = True
+            with self._lock:
+                self._current_chat_hwnd = hwnd
+                self._in_navigation_mode = True
             # 메시지 자동 읽기 시작
             message_monitor.start(hwnd)
-            log.debug(f"네비게이션 모드 진입: hwnd={hwnd}")
+            log.debug(f"navigation mode entered: hwnd={hwnd}")
             return True
 
         return False
@@ -98,47 +115,53 @@ class ModeManager:
         chat_navigator: "ChatRoomNavigator",
     ) -> None:
         """MessageMonitor 중지 + 채팅방 종료."""
-        if not self._in_navigation_mode:
-            return
+        with self._lock:
+            if not self._in_navigation_mode:
+                return
+            # 상태 먼저 변경
+            self._in_navigation_mode = False
+            self._current_chat_hwnd = None
 
-        # 메시지 자동 읽기 중지
+        # 외부 호출은 락 밖에서
         message_monitor.stop()
         chat_navigator.exit_chat_room()
-        self._in_navigation_mode = False
-        self._current_chat_hwnd = None
-        log.debug("네비게이션 모드 종료")
+        log.debug("navigation mode exited")
 
     # === 컨텍스트 메뉴 모드 ===
 
     def enter_context_menu_mode(self, message_monitor: "MessageMonitor") -> None:
         """MessageMonitor pause. stop 대신 pause로 COM 재등록 방지."""
-        if self._in_context_menu_mode:
-            return
+        with self._lock:
+            if self._in_context_menu_mode:
+                return
+            self._in_context_menu_mode = True
+            self._menu_closed_time = time.time()
+            should_pause = message_monitor and message_monitor.is_running()
 
-        self._in_context_menu_mode = True
-        self._menu_closed_time = time.time()
-
-        # MessageMonitor pause (stop 대신 - COM 재등록 오버헤드 방지)
-        if message_monitor and message_monitor.is_running():
+        # 외부 호출은 락 밖에서
+        if should_pause:
             message_monitor.pause()
-        log.trace("메뉴 모드 진입")
+        log.trace("menu mode entered")
 
     def exit_context_menu_mode(self, message_monitor: "MessageMonitor") -> None:
         """MessageMonitor resume."""
-        if not self._in_context_menu_mode:
-            return
+        with self._lock:
+            if not self._in_context_menu_mode:
+                return
+            self._in_context_menu_mode = False
+            self._menu_closed_time = time.time()
+            should_resume = message_monitor and message_monitor.is_running()
 
-        self._in_context_menu_mode = False
-        self._menu_closed_time = time.time()
-
-        # MessageMonitor resume
-        if message_monitor and message_monitor.is_running():
+        # 외부 호출은 락 밖에서
+        if should_resume:
             message_monitor.resume()
-        log.trace("메뉴 모드 종료")
+        log.trace("menu mode exited")
 
     def update_menu_closed_time(self) -> None:
-        self._menu_closed_time = time.time()
+        with self._lock:
+            self._menu_closed_time = time.time()
 
     def should_exit_navigation_by_grace_period(self, grace_period: float = 1.0) -> bool:
         """메뉴 닫힌 후 grace_period 경과 여부."""
-        return time.time() - self._menu_closed_time > grace_period
+        with self._lock:
+            return time.time() - self._menu_closed_time > grace_period

@@ -73,7 +73,7 @@ class StructureHandler(BaseHandler):
             if self._target_hwnd:
                 self._root_element = self._uia.ElementFromHandle(self._target_hwnd)
                 if not self._root_element:
-                    log.error(f"ElementFromHandle 실패: hwnd={self._target_hwnd}")
+                    log.error(f"ElementFromHandle failed: hwnd={self._target_hwnd}")
                     return False
             else:
                 # 전체 감시 (데스크톱 루트)
@@ -90,11 +90,11 @@ class StructureHandler(BaseHandler):
                 self._com_handler
             )
 
-            log.debug(f"StructureChanged 핸들러 등록 완료 (hwnd={self._target_hwnd})")
+            log.debug(f"StructureChanged handler registered (hwnd={self._target_hwnd})")
             return True
 
         except Exception as e:
-            log.error(f"StructureChanged 핸들러 등록 실패: {e}")
+            log.error(f"StructureChanged handler registration failed: {e}")
             self._uia = None
             self._com_handler = None
             self._root_element = None
@@ -108,9 +108,9 @@ class StructureHandler(BaseHandler):
                     self._root_element,
                     self._com_handler
                 )
-                log.debug("StructureChanged 핸들러 해제 완료")
+                log.debug("StructureChanged handler unregistered")
         except Exception as e:
-            log.trace(f"StructureChanged 핸들러 해제 오류: {e}")
+            log.trace(f"StructureChanged handler unregister error: {e}")
         finally:
             self._uia = None
             self._com_handler = None
@@ -167,4 +167,4 @@ class StructureHandler(BaseHandler):
             self._emit(event)
 
         except Exception as e:
-            log.trace(f"StructureChanged 처리 오류: {e}")
+            log.trace(f"StructureChanged processing error: {e}")

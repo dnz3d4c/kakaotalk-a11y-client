@@ -2,6 +2,7 @@
 # Copyright 2025-2026 dnz3d4c
 """채팅방 메시지 목록 관리. UIAAdapter 사용으로 UIA 직접 호출 제거."""
 
+import threading
 from typing import Any, List, Optional, TYPE_CHECKING
 
 from ..config import SEARCH_DEPTH_MESSAGE_LIST
@@ -22,67 +23,77 @@ class ChatRoomNavigator:
         """
         from ..infrastructure.uia_adapter import get_default_uia_adapter
         self._uia = uia_adapter or get_default_uia_adapter()
+        self._lock = threading.RLock()
 
         self.messages: List[Any] = []
         self.chat_control: Optional[Any] = None
         self.list_control: Optional[Any] = None  # 메시지 목록 ListControl
-        self.is_active: bool = False
+        self._is_active: bool = False
         self._hwnd: int = 0  # 캐시 키용 창 핸들
         self._current_focused_item: Optional[Any] = None  # 현재 포커스된 메시지 (컨텍스트 메뉴용)
 
+    @property
+    def is_active(self) -> bool:
+        """채팅방 활성 상태."""
+        with self._lock:
+            return self._is_active
+
+    @is_active.setter
+    def is_active(self, value: bool):
+        with self._lock:
+            self._is_active = value
+
     def enter_chat_room(self, hwnd: int) -> bool:
         """채팅방 진입. COM 초기화 후 메시지 목록 로드."""
-        fail_reason = None
-        try:
-            # COM 초기화 (Adapter가 스레드별 관리)
-            self._uia.init_com()
+        with self._lock:
+            try:
+                # COM 초기화 (Adapter가 스레드별 관리)
+                self._uia.init_com()
 
-            self._hwnd = hwnd  # 캐시 키용 저장
-            self.chat_control = self._uia.get_control_from_handle(hwnd)
-            if not self.chat_control:
-                fail_reason = 'no_chat_control'
+                self._hwnd = hwnd  # 캐시 키용 저장
+                self.chat_control = self._uia.get_control_from_handle(hwnd)
+                if not self.chat_control:
+                    return False
+
+                if not self._refresh_messages_unlocked():
+                    return False
+
+                self._is_active = True
+                return True
+
+            except Exception:
                 return False
-
-            if not self.refresh_messages():
-                fail_reason = 'refresh_failed'
-                return False
-
-            self.is_active = True
-            return True
-
-        except Exception as e:
-            fail_reason = f'exception: {e}'
-            return False
-        finally:
-            # 진입 실패 시 자동 덤프
-            if fail_reason:
-                debug_tools.dump_on_condition('enter_fail', True, {
-                    'hwnd': hwnd,
-                    'reason': fail_reason,
-                })
 
     def exit_chat_room(self):
         """상태 초기화 및 COM 해제."""
-        self.is_active = False
-        self.messages = []
-        self.chat_control = None
-        self.list_control = None
-        self._hwnd = 0
-        self._current_focused_item = None
-        # COM 해제 (Adapter가 스레드별 관리)
-        self._uia.uninit_com()
+        with self._lock:
+            self._is_active = False
+            self.messages = []
+            self.chat_control = None
+            self.list_control = None
+            self._hwnd = 0
+            self._current_focused_item = None
+            # COM 해제 (Adapter가 스레드별 관리)
+            self._uia.uninit_com()
 
     @property
     def current_focused_item(self) -> Optional[Any]:
         """컨텍스트 메뉴 표시용 포커스 메시지."""
-        return self._current_focused_item
+        with self._lock:
+            return self._current_focused_item
 
     @current_focused_item.setter
     def current_focused_item(self, item: Optional[Any]):
-        self._current_focused_item = item
+        with self._lock:
+            self._current_focused_item = item
 
     def refresh_messages(self, use_cache: bool = True) -> bool:
         """메시지 목록 새로고침. hwnd 기반 TTL 캐시 사용."""
+        with self._lock:
+            return self._refresh_messages_unlocked(use_cache)
+
+    def _refresh_messages_unlocked(self, use_cache: bool = True) -> bool:
+        """락 없이 메시지 새로고침 (내부용)."""
         if not self.chat_control:
             return False
 

@@ -161,18 +161,18 @@ class EmojiClicker:
         """메인 루프 실행. use_gui=False면 콘솔 모드."""
         log_path = get_log_file_path()
         if log_path:
-            log.info(f"로그 파일: {log_path}")
+            log.info(f"log file: {log_path}")
         speak("카카오톡 접근성 클라이언트 시작")
 
         # UIA 체크 (카카오톡 유무와 무관)
         uia_result = check_uia_available()
         if not uia_result["available"]:
             speak(uia_result["message"])
-            log.warning(f"UIA 체크 실패: {uia_result['message']}")
+            log.warning(f"UIA check failed: {uia_result['message']}")
             if uia_result["error_detail"]:
-                log.debug(f"상세: {uia_result['error_detail']}")
+                log.debug(f"detail: {uia_result['error_detail']}")
         else:
-            log.debug("UIA 체크 통과")
+            log.debug("UIA check passed")
 
         # 마우스 훅 설치 (비메시지 항목 우클릭 차단)
         self.mouse_hook.install()
@@ -208,7 +208,7 @@ class EmojiClicker:
             return
         self._cleaned_up = True
 
-        log.debug("정리 시작")
+        log.debug("cleanup started")
 
         # 1. 메시지 모니터 중지
         self.message_monitor.stop()
@@ -224,7 +224,7 @@ class EmojiClicker:
 
         speak("종료")
         time.sleep(0.3)  # 스크린 리더가 읽을 시간 확보
-        log.debug("정리 완료")
+        log.debug("cleanup completed")
 
 
 # 전역 인스턴스 (atexit에서 접근용)
@@ -238,14 +238,14 @@ def _cleanup_handler():
         try:
             _clicker_instance.cleanup()
         except Exception as e:
-            log.debug(f"cleanup 오류: {e}")
+            log.debug(f"cleanup error: {e}")
         finally:
             _clicker_instance = None
 
 
 def _signal_handler(signum, frame):
     """SIGINT/SIGTERM 수신 시 종료."""
-    log.debug(f"시그널 수신: {signum}")
+    log.debug(f"signal received: {signum}")
     sys.exit(0)
 
 
@@ -392,17 +392,17 @@ def main() -> int:
     if not lock.acquire():
         # 이미 실행 중 - 기존 프로세스 종료 후 재시도
         speak("이미 실행 중입니다. 기존 프로세스를 종료합니다.")
-        log.debug("기존 프로세스 감지, 종료 시도")
+        log.debug("existing process detected, attempting termination")
 
         if lock.terminate_existing():
             time.sleep(0.5)  # 종료 대기
             if not lock.acquire():
                 speak("프로세스 시작 실패")
-                log.debug("프로세스 잠금 획득 실패")
+                log.debug("failed to acquire process lock")
                 return 1
         else:
             speak("기존 프로세스 종료 실패. 작업관리자에서 python.exe를 종료해주세요.")
-            log.debug("기존 프로세스 종료 실패")
+            log.debug("failed to terminate existing process")
             return 1
 
     # 시그널 핸들러 등록 (GUI 모드에서는 wx와 충돌 방지)

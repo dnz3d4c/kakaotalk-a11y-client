@@ -155,7 +155,7 @@ class DownloadProgressDialog(wx.Dialog):
                     self.info, self._progress_callback
                 )
             except Exception as e:
-                log.error(f"다운로드 오류: {e}")
+                log.error(f"download error: {e}")
                 self.error_message = str(e)
             finally:
                 wx.CallAfter(self._on_download_complete)
@@ -218,18 +218,18 @@ def run_update_flow(parent: "MainFrame", info: UpdateInfo) -> None:
     """릴리스 노트 -> 다운로드 -> 재시작 확인 -> 업데이트 적용 순서로 진행."""
     # 1. 릴리스 노트 표시
     if not show_release_notes(parent, info):
-        log.info("사용자가 업데이트 취소")
+        log.info("user cancelled update")
         return
 
     # 2. 다운로드
     zip_path = run_download(parent, info)
     if not zip_path:
-        log.info("다운로드 취소/실패")
+        log.info("download cancelled/failed")
         return
 
     # 3. 재시작 확인
     if not confirm_restart(parent):
-        log.info("재시작 취소, 다음 실행 시 적용됨")
+        log.info("restart cancelled, will apply on next launch")
         # zip은 임시 폴더에 유지 (다음에 사용 가능)
         return
 

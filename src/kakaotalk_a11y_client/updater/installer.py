@@ -35,28 +35,28 @@ def extract_update(zip_path: Path) -> Optional[Path]:
         # Case 1: KakaotalkA11y 하위 폴더가 있는 경우
         extracted = EXTRACT_DIR / "KakaotalkA11y"
         if extracted.exists() and (extracted / "KakaotalkA11y.exe").exists():
-            log.info(f"압축 해제 완료: {extracted}")
+            log.info(f"extraction completed: {extracted}")
             return extracted
 
         # Case 2: exe가 루트에 바로 있는 경우 (현재 배포 구조)
         if (EXTRACT_DIR / "KakaotalkA11y.exe").exists():
-            log.info(f"압축 해제 완료: {EXTRACT_DIR}")
+            log.info(f"extraction completed: {EXTRACT_DIR}")
             return EXTRACT_DIR
 
         # Case 3: 첫 번째 하위 폴더에 exe가 있는 경우
         for item in EXTRACT_DIR.iterdir():
             if item.is_dir() and (item / "KakaotalkA11y.exe").exists():
-                log.info(f"압축 해제 완료: {item}")
+                log.info(f"extraction completed: {item}")
                 return item
 
-        log.error("KakaotalkA11y.exe를 찾을 수 없음")
+        log.error("KakaotalkA11y.exe not found")
         return None
 
     except zipfile.BadZipFile:
-        log.error("손상된 zip 파일")
+        log.error("corrupted zip file")
         return None
     except Exception as e:
-        log.error(f"압축 해제 실패: {e}")
+        log.error(f"extraction failed: {e}")
         return None
 
 
@@ -109,7 +109,7 @@ def apply_update(extracted_dir: Path) -> bool:
     """batch 스크립트 실행. 성공 시 프로그램 종료됨."""
     install_dir = get_install_dir()
     if not install_dir:
-        log.error("개발 환경에서는 업데이트 불가")
+        log.error("cannot update in development environment")
         return False
 
     try:
@@ -122,17 +122,17 @@ def apply_update(extracted_dir: Path) -> bool:
         )
         bat_path.write_text(bat_content, encoding="cp949")
 
-        log.info(f"업데이트 스크립트 생성: {bat_path}")
+        log.info(f"update script created: {bat_path}")
 
         # batch 실행 (분리된 프로세스)
         # start 명령어로 새 콘솔에서 실행
         os.system(f'start "Updater" cmd /c "{bat_path}"')
 
-        log.info("업데이트 스크립트 실행됨")
+        log.info("update script executed")
         return True
 
     except Exception as e:
-        log.error(f"업데이트 적용 실패: {e}")
+        log.error(f"update apply failed: {e}")
         return False
 
 
@@ -142,9 +142,9 @@ def cleanup_temp() -> None:
             shutil.rmtree(TEMP_DIR)
         if EXTRACT_DIR.exists():
             shutil.rmtree(EXTRACT_DIR)
-        log.debug("임시 파일 정리 완료")
+        log.debug("temp files cleaned up")
     except Exception as e:
-        log.warning(f"임시 파일 정리 실패: {e}")
+        log.warning(f"temp cleanup failed: {e}")
 
 
 def get_download_path() -> Path:

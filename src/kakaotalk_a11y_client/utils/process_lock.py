@@ -48,11 +48,11 @@ class ProcessLock:
             # 3. PID 기록 (기존 프로세스 종료용)
             self.pid_file.write_text(str(os.getpid()))
             self._locked = True
-            log.debug(f"잠금 획득: {self.lock_file}, PID={os.getpid()}")
+            log.debug(f"lock acquired: {self.lock_file}, PID={os.getpid()}")
             return True
 
         except (IOError, OSError) as e:
-            log.debug(f"잠금 시도 실패: {e}")
+            log.debug(f"lock attempt failed: {e}")
             if self._file_handle:
                 try:
                     self._file_handle.close()
@@ -71,14 +71,14 @@ class ProcessLock:
         try:
             old_pid = int(self.pid_file.read_text().strip())
             if self._is_process_running(old_pid):
-                log.debug(f"기존 프로세스 실행 중: PID={old_pid}")
+                log.debug(f"existing process running: PID={old_pid}")
                 return False
             else:
-                log.debug(f"stale 파일 발견, 정리 후 재시도: PID={old_pid}")
+                log.debug(f"stale file found, cleanup and retry: PID={old_pid}")
                 self._cleanup_stale_files()
                 return self._try_acquire()
         except (ValueError, OSError) as e:
-            log.debug(f"PID 파일 읽기 오류: {e}")
+            log.debug(f"PID file read error: {e}")
             self._cleanup_stale_files()
             return self._try_acquire()
 
@@ -88,7 +88,7 @@ class ProcessLock:
             try:
                 msvcrt.locking(self._file_handle.fileno(), msvcrt.LK_UNLCK, 1)
             except Exception as e:
-                log.debug(f"잠금 해제 오류: {e}")
+                log.debug(f"lock release error: {e}")
 
             # 2. 파일 핸들 닫기
             try:
@@ -103,7 +103,7 @@ class ProcessLock:
                     if self.pid_file.read_text().strip() == current_pid:
                         self.pid_file.unlink()
             except Exception as e:
-                log.debug(f"PID 파일 삭제 오류: {e}")
+                log.debug(f"PID file delete error: {e}")
 
             # 4. lock 파일 삭제 (선택적)
             try:
@@ -111,7 +111,7 @@ class ProcessLock:
             except Exception:
                 pass
 
-            log.debug("잠금 해제 완료")
+            log.debug("lock released")
 
         self._file_handle = None
         self._locked = False
@@ -132,10 +132,10 @@ class ProcessLock:
                 return True
 
             # 종료 시도
-            log.debug(f"기존 프로세스 종료 시도: PID={old_pid}")
+            log.debug(f"terminating existing process: PID={old_pid}")
             return self._terminate_process(old_pid)
         except (ValueError, OSError) as e:
-            log.debug(f"기존 프로세스 종료 오류: {e}")
+            log.debug(f"existing process termination error: {e}")
             return False
 
     def _is_process_running(self, pid: int) -> bool:
@@ -174,21 +174,21 @@ class ProcessLock:
                 time.sleep(0.1)
                 if not self._is_process_running(pid):
                     self._cleanup_stale_files()
-                    log.debug(f"프로세스 종료 완료: PID={pid}")
+                    log.debug(f"process terminated: PID={pid}")
                     return True
 
-            log.debug(f"taskkill 후 프로세스 여전히 실행 중: PID={pid}")
+            log.debug(f"process still running after taskkill: PID={pid}")
             return False
 
         except subprocess.TimeoutExpired:
-            log.debug(f"taskkill 타임아웃: PID={pid}")
+            log.debug(f"taskkill timeout: PID={pid}")
             return False
         except FileNotFoundError:
             # taskkill 명령어 없음 - 대체 방법 시도
-            log.debug("taskkill 명령어 없음, 대체 방법 시도")
+            log.debug("taskkill not found, trying fallback")
             return self._terminate_process_fallback(pid)
         except Exception as e:
-            log.debug(f"프로세스 종료 오류: {e}")
+            log.debug(f"process termination error: {e}")
             return False
 
     def _terminate_process_fallback(self, pid: int) -> bool:

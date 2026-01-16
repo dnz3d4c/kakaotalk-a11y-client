@@ -56,8 +56,8 @@ SEARCH_DEPTH_CHAT_LIST = 6                # 채팅 목록 탐색 (메인 창)
 FILTER_MAX_CONSECUTIVE_EMPTY = 15         # 연속 빈 항목 시 조기 종료 한계
 
 # UIA 검색 타임아웃
-SEARCH_MAX_SECONDS_LIST = 0.5             # 메시지 목록 검색 제한시간
-SEARCH_MAX_SECONDS_FALLBACK = 0.3         # 존재 확인용 제한시간
+SEARCH_MAX_SECONDS_LIST = 0.3             # 메시지 목록 검색 제한시간 (0.5→0.3)
+SEARCH_MAX_SECONDS_FALLBACK = 0.2         # 존재 확인용 제한시간 (0.3→0.2)
 
 # =============================================================================
 # 포커스 모니터 설정
@@ -71,10 +71,6 @@ TIMING_NAVIGATION_GRACE = 1.0             # 메뉴 닫힘 후 MessageMonitor 유
 # =============================================================================
 
 TIMING_EVENT_PUMP_INTERVAL = 0.05         # 이벤트 펌프 폴링 간격
-
-# 포커스 중복 필터링 (카카오톡 A→B→A→B 버그 대응)
-TIMING_FOCUS_DEDUP_WINDOW = 0.6           # 600ms 내 같은 Name은 중복 (A→A 왕복 ~570ms)
-FOCUS_DEDUP_HISTORY_SIZE = 5              # 최근 N개 Name 기억
 
 # =============================================================================
 # 캐시 설정

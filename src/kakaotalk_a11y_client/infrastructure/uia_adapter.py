@@ -139,9 +139,9 @@ class UIAAdapterImpl:
                 try:
                     pythoncom.CoInitialize()
                     self._com_initialized[thread_id] = True
-                    log.trace(f"COM 초기화 (thread={thread_id})")
+                    log.trace(f"COM initialized (thread={thread_id})")
                 except Exception as e:
-                    log.warning(f"COM 초기화 실패: {e}")
+                    log.warning(f"COM init failed: {e}")
 
     def uninit_com(self) -> None:
         """현재 스레드 COM 해제."""
@@ -151,9 +151,9 @@ class UIAAdapterImpl:
                 try:
                     pythoncom.CoUninitialize()
                     self._com_initialized[thread_id] = False
-                    log.trace(f"COM 해제 (thread={thread_id})")
+                    log.trace(f"COM uninitialized (thread={thread_id})")
                 except Exception as e:
-                    log.trace(f"COM 해제 실패 (무시): {e}")
+                    log.trace(f"COM uninit failed (ignored): {e}")
 
     def get_focused_control(self) -> Optional[Control]:
         """현재 포커스된 컨트롤 반환."""

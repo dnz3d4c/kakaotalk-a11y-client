@@ -78,10 +78,10 @@ def _create_uia_client():
             uia = CreateObject(CUIAutomation8)
             uia6 = uia.QueryInterface(IUIAutomation6)
             uia6.CoalesceEvents = CoalesceEventsOptions_Enabled
-            log.debug("IUIAutomation6 CoalesceEvents 활성화 (CUIAutomation8)")
+            log.debug("IUIAutomation6 CoalesceEvents enabled (CUIAutomation8)")
             return uia6
         except Exception as e:
-            log.debug(f"CUIAutomation8 실패, CUIAutomation 시도: {e}")
+            log.debug(f"CUIAutomation8 failed, falling back to CUIAutomation: {e}")
 
     # 폴백: 기본 CUIAutomation
     return CreateObject(CUIAutomation)

@@ -33,52 +33,52 @@ class MessageMonitor:
         # 이벤트 모니터
         self._list_monitor: Optional[MessageListMonitor] = None
 
-        log.debug("MessageMonitor 초기화")
+        log.debug("MessageMonitor initialized")
 
     def start(self, hwnd: int) -> bool:
         """이벤트 모니터 시작. 이미 실행 중이면 True 반환."""
         if self._running:
-            log.trace("MessageMonitor 이미 실행 중")
+            log.trace("MessageMonitor already running")
             return True
 
         self._hwnd = hwnd
         self._running = True
 
-        log.info(f"MessageMonitor 시작: hwnd={hwnd}")
+        log.info(f"MessageMonitor started: hwnd={hwnd}")
 
         # 이벤트 모드 시작
         success = self._start_event_mode()
         if success:
-            log.info("MessageMonitor: 이벤트 모드 활성화")
+            log.info("MessageMonitor: event mode activated")
             return True
 
-        log.error("MessageMonitor: 이벤트 모드 시작 실패")
+        log.error("MessageMonitor: failed to start event mode")
         self._running = False
         return False
 
     def stop(self):
-        log.debug("MessageMonitor 중지 요청")
+        log.debug("MessageMonitor stop requested")
         self._running = False
 
         # 이벤트 모니터 중지
         if self._list_monitor:
             self._list_monitor.stop()
             self._list_monitor = None
-            log.debug("MessageListMonitor 중지됨")
+            log.debug("MessageListMonitor stopped")
 
-        log.info("MessageMonitor 중지 완료")
+        log.info("MessageMonitor stopped")
 
     def pause(self):
         """팝업메뉴 열릴 때 호출. COM 재등록 없이 이벤트만 무시."""
         if self._list_monitor:
             self._list_monitor.pause()
-            log.debug("MessageMonitor 일시 중지")
+            log.debug("MessageMonitor paused")
 
     def resume(self):
         """팝업메뉴 닫힐 때 호출. 이벤트 처리 재개."""
         if self._list_monitor:
             self._list_monitor.resume()
-            log.debug("MessageMonitor 재개")
+            log.debug("MessageMonitor resumed")
 
     def is_running(self) -> bool:
         return self._running
@@ -91,7 +91,7 @@ class MessageMonitor:
     def _start_event_mode(self) -> bool:
         """MessageListMonitor 생성 및 시작."""
         if not self.chat_navigator.chat_control:
-            log.warning("chat_control 없음, 이벤트 모드 실패")
+            log.warning("chat_control not found, event mode failed")
             return False
 
         try:
@@ -102,31 +102,31 @@ class MessageMonitor:
             )
 
             if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_LIST):
-                log.warning("메시지 목록 없음, 이벤트 모드 실패")
+                log.warning("message list not found, event mode failed")
                 return False
 
             # MessageListMonitor 생성 및 시작
             self._list_monitor = MessageListMonitor(list_control=msg_list)
             self._list_monitor.start(on_message_changed=self._on_message_event)
-            log.info("MessageListMonitor 시작")
+            log.info("MessageListMonitor started")
             return True
 
         except Exception as e:
-            log.error(f"이벤트 모드 시작 실패: {e}")
+            log.error(f"failed to start event mode: {e}")
             return False
 
     def _on_message_event(self, event: MessageEvent):
         """새 메시지 감지 시 호출. 로드 후 TTS 발화."""
-        log.debug(f"메시지 이벤트: new_count={event.new_count}, source={event.source}")
+        log.debug(f"message event: new_count={event.new_count}, source={event.source}")
 
         if not self.chat_navigator.is_active:
-            log.trace("채팅방 비활성, 이벤트 무시")
+            log.trace("chat room inactive, ignoring event")
             return
 
         # 새 메시지 로드 (event.children 활용으로 GetChildren 이중 호출 방지)
         new_messages = self._load_new_messages(event.new_count, event.children)
         if new_messages:
-            log.debug(f"새 메시지 {len(new_messages)}개 로드됨")
+            log.debug(f"{len(new_messages)} new message(s) loaded")
             self._announce_new_messages(new_messages)
 
     def _load_new_messages(self, count: int, children: list = None) -> list:
@@ -160,11 +160,11 @@ class MessageMonitor:
             return []
 
         except Exception as e:
-            log.trace(f"메시지 로드 오류: {e}")
+            log.trace(f"message load error: {e}")
             return []
 
     def _announce_new_messages(self, new_messages: list):
-        """시스템 메시지 필터링 후 TTS 발화. interrupt=False로 큐 누적."""
+        """새 메시지 TTS 발화. interrupt=False로 큐 누적."""
         if not new_messages:
             return
 
@@ -176,35 +176,16 @@ class MessageMonitor:
             if not name.strip():
                 continue
 
-            # 시스템 메시지 필터링
-            if self._is_system_message(name):
-                log.trace(f"시스템 메시지 필터링: {name[:30]}...")
-                continue
-
             # 새 메시지는 interrupt=False (TTS 큐에 누적, 발화 끊김 방지)
             speak(name, interrupt=False)
             announced_count += 1
 
             # 메시지 내용 로깅 (30자 제한)
             preview = name[:30] + "..." if len(name) > 30 else name
-            log.trace(f"발화: {preview}")
+            log.trace(f"speak: {preview}")
 
         if announced_count > 0:
-            log.debug(f"총 {announced_count}개 메시지 발화 완료")
-
-    def _is_system_message(self, text: str) -> bool:
-        """'읽지 않은 메시지', '님이 들어왔습니다' 등 시스템 메시지 필터링."""
-        system_patterns = [
-            "읽지 않은 메시지",
-            "님이 들어왔습니다",
-            "님이 나갔습니다",
-        ]
-
-        for pattern in system_patterns:
-            if pattern in text:
-                return True
-
-        return False
+            log.debug(f"{announced_count} message(s) announced")
 
     def get_stats(self) -> dict:
         stats = {

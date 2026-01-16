@@ -2,6 +2,7 @@
 # Copyright 2025-2026 dnz3d4c
 """음성 출력 추상화. 테스트 시 mock으로 대체 가능."""
 
+import threading
 from typing import Protocol, runtime_checkable
 
 
@@ -24,11 +25,14 @@ class DefaultSpeakCallback:
 
 # 싱글톤 인스턴스
 _default_speak_callback: DefaultSpeakCallback | None = None
+_speak_callback_lock = threading.Lock()
 
 
 def get_default_speak_callback() -> DefaultSpeakCallback:
     """기본 SpeakCallback 싱글톤 반환."""
     global _default_speak_callback
     if _default_speak_callback is None:
-        _default_speak_callback = DefaultSpeakCallback()
+        with _speak_callback_lock:
+            if _default_speak_callback is None:  # Double-check
+                _default_speak_callback = DefaultSpeakCallback()
     return _default_speak_callback

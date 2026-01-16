@@ -164,7 +164,7 @@ class PropertyHandler(BaseHandler):
     def register(self, uia_client) -> bool:
         """PropertyChanged 이벤트 핸들러 등록."""
         if not HAS_PROPERTY_HANDLER:
-            log.warning("PropertyChanged 핸들러 미지원 (comtypes 필요)")
+            log.warning("PropertyChanged handler not supported (comtypes required)")
             return False
 
         try:
@@ -174,7 +174,7 @@ class PropertyHandler(BaseHandler):
             if self._target_hwnd:
                 self._root_element = self._uia.ElementFromHandle(self._target_hwnd)
                 if not self._root_element:
-                    log.error(f"ElementFromHandle 실패: hwnd={self._target_hwnd}")
+                    log.error(f"ElementFromHandle failed: hwnd={self._target_hwnd}")
                     return False
             else:
                 self._root_element = self._uia.GetRootElement()
@@ -197,11 +197,11 @@ class PropertyHandler(BaseHandler):
             )
 
             prop_names = [PROPERTY_IDS.get(p, str(p)) for p in self._property_ids]
-            log.debug(f"PropertyChanged 핸들러 등록 완료: {prop_names}")
+            log.debug(f"PropertyChanged handler registered: {prop_names}")
             return True
 
         except Exception as e:
-            log.error(f"PropertyChanged 핸들러 등록 실패: {e}")
+            log.error(f"PropertyChanged handler registration failed: {e}")
             self._uia = None
             self._com_handler = None
             self._root_element = None
@@ -215,9 +215,9 @@ class PropertyHandler(BaseHandler):
                     self._root_element,
                     self._com_handler
                 )
-                log.debug("PropertyChanged 핸들러 해제 완료")
+                log.debug("PropertyChanged handler unregistered")
         except Exception as e:
-            log.trace(f"PropertyChanged 핸들러 해제 오류: {e}")
+            log.trace(f"PropertyChanged handler unregister error: {e}")
         finally:
             self._uia = None
             self._com_handler = None
@@ -257,7 +257,7 @@ class PropertyHandler(BaseHandler):
             try:
                 new_value_str = str(new_value) if new_value is not None else "(None)"
             except Exception:
-                new_value_str = "(변환 실패)"
+                new_value_str = "(conversion failed)"
 
             # EventLog 생성
             event = EventLog(
@@ -277,4 +277,4 @@ class PropertyHandler(BaseHandler):
             self._emit(event)
 
         except Exception as e:
-            log.trace(f"PropertyChanged 처리 오류: {e}")
+            log.trace(f"PropertyChanged processing error: {e}")

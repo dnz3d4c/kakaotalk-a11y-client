@@ -56,7 +56,7 @@ def check_for_update() -> Optional[UpdateInfo]:
 
     tag = release.get("tag_name", "")
     if not is_newer(tag, __version__):
-        log.debug(f"최신 버전 사용 중: {__version__}")
+        log.debug(f"already on latest version: {__version__}")
         return None
 
     download_url = find_asset_url(release)
@@ -83,7 +83,7 @@ def check_for_update_if_needed() -> Optional[UpdateInfo]:
 
     if (now - last_check) < CHECK_INTERVAL:
         elapsed_hours = (now - last_check) / 3600
-        log.debug(f"체크 간격 미충족 ({elapsed_hours:.1f}h < 4h), 스킵")
+        log.debug(f"check interval not met ({elapsed_hours:.1f}h < 4h), skipping")
         return None
 
     info = check_for_update()
@@ -117,7 +117,7 @@ def apply_and_restart(zip_path: Path) -> bool:
         return False
 
     if apply_update(extracted):
-        log.info("업데이트 적용됨, 프로그램 종료")
+        log.info("update applied, terminating program")
         return True
 
     cleanup_temp()

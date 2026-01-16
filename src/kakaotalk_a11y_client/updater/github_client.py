@@ -32,21 +32,21 @@ def get_latest_release() -> Optional[dict]:
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=API_TIMEOUT) as response:
             data = json.loads(response.read().decode("utf-8"))
-            log.debug(f"최신 릴리스: {data.get('tag_name')}")
+            log.debug(f"latest release: {data.get('tag_name')}")
             return data
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            log.warning("릴리스 없음")
+            log.warning("no releases found")
         elif e.code == 403:
-            log.warning("API rate limit 초과")
+            log.warning("API rate limit exceeded")
         else:
-            log.warning(f"API 오류: {e.code}")
+            log.warning(f"API error: {e.code}")
         return None
     except urllib.error.URLError as e:
-        log.warning(f"네트워크 오류: {e.reason}")
+        log.warning(f"network error: {e.reason}")
         return None
     except Exception as e:
-        log.error(f"릴리스 조회 실패: {e}")
+        log.error(f"release fetch failed: {e}")
         return None
 
 
@@ -57,10 +57,10 @@ def find_asset_url(release: dict) -> Optional[str]:
         name = asset.get("name", "")
         if ASSET_PATTERN.match(name):
             url = asset.get("browser_download_url")
-            log.debug(f"에셋 발견: {name}")
+            log.debug(f"asset found: {name}")
             return url
 
-    log.warning("적합한 에셋 없음")
+    log.warning("no matching asset found")
     return None
 
 
@@ -92,15 +92,15 @@ def download_asset(
 
                     if progress_callback:
                         if not progress_callback(downloaded, total):
-                            log.info("다운로드 취소됨")
+                            log.info("download cancelled")
                             return False
 
-            log.info(f"다운로드 완료: {dest}")
+            log.info(f"download completed: {dest}")
             return True
 
     except urllib.error.URLError as e:
-        log.error(f"다운로드 실패: {e.reason}")
+        log.error(f"download failed: {e.reason}")
         return False
     except Exception as e:
-        log.error(f"다운로드 오류: {e}")
+        log.error(f"download error: {e}")
         return False

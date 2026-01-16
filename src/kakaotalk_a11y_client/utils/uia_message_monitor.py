@@ -47,7 +47,7 @@ class StructureChangedHandler(COMObject):
                 try:
                     self._callback(changeType)
                 except Exception as e:
-                    log.trace(f"StructureChanged 콜백 오류: {e}")
+                    log.trace(f"StructureChanged callback error: {e}")
 
 
 @dataclass
@@ -102,12 +102,15 @@ class MessageListMonitor:
         # 초기 children (중복 GetChildren 방지)
         self._initial_children: Optional[list] = None
 
-        log.trace(f"MessageListMonitor 초기화: comtypes={HAS_COMTYPES}")
+        # pause 중 새 메시지 이벤트 발생 여부 (resume 시 체크용)
+        self._missed_event_flag = False
+
+        log.trace(f"MessageListMonitor initialized: comtypes={HAS_COMTYPES}")
 
     def start(self, on_message_changed: Callable[[MessageEvent], None]) -> bool:
         """모니터링 시작. 성공 시 True."""
         if self._running:
-            log.warning("MessageListMonitor 이미 실행 중")
+            log.warning("MessageListMonitor already running")
             return False
 
         self._callback = on_message_changed
@@ -140,7 +143,7 @@ class MessageListMonitor:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-        log.debug("MessageListMonitor 중지됨")
+        log.debug("MessageListMonitor stopped")
 
     def pause(self, wait: bool = True) -> None:
         """핸들러 해제 요청. wait=True면 완료까지 대기 (최대 200ms)."""
@@ -156,7 +159,7 @@ class MessageListMonitor:
                 # 이벤트 루프가 해제 완료할 때까지 대기 (최대 200ms)
                 self._pause_complete.wait(timeout=0.2)
 
-            log.debug("MessageListMonitor 일시 중지 (핸들러 해제)")
+            log.debug("MessageListMonitor paused (handler unregistered)")
 
     def resume(self) -> None:
         """핸들러 재등록 요청. pause 후 0.3초 이내면 무시."""
@@ -164,15 +167,23 @@ class MessageListMonitor:
             # debounce: 너무 빠른 resume 방지
             elapsed = time.time() - self._pause_time
             if elapsed < TIMING_RESUME_DEBOUNCE:
-                log.trace(f"resume 무시 (debounce: {elapsed:.2f}s < {TIMING_RESUME_DEBOUNCE}s)")
+                log.trace(f"resume ignored (debounce: {elapsed:.2f}s < {TIMING_RESUME_DEBOUNCE}s)")
                 return
+
+            # pause 중 놓친 메시지 체크
+            missed = self._missed_event_flag
+            self._missed_event_flag = False
             self._paused = False
 
             # 이벤트 핸들러 재등록 요청 (이벤트 루프에서 실제 등록)
             if self._running:
                 self._pending_register = True
 
-            log.debug("MessageListMonitor 재개 (핸들러 재등록)")
+            log.debug("MessageListMonitor resumed (handler re-registered)")
+
+            # 놓친 메시지가 있으면 체크
+            if missed:
+                self._check_missed_messages()
 
     @property
     def is_paused(self) -> bool:
@@ -185,7 +196,7 @@ class MessageListMonitor:
             name="MessageListMonitor-Event"
         )
         self._thread.start()
-        log.info("MessageListMonitor: 이벤트 스레드 시작")
+        log.info("MessageListMonitor: event thread started")
 
     def _event_loop(self) -> None:
         import pythoncom
@@ -195,10 +206,10 @@ class MessageListMonitor:
             # 이 스레드에서 이벤트 등록
             success = self._try_register_event()
             if not success:
-                log.error("이벤트 등록 실패 - 메시지 모니터링 불가")
+                log.error("event registration failed - message monitoring unavailable")
                 return
 
-            log.info("MessageListMonitor: 메시지 펌프 시작")
+            log.info("MessageListMonitor: message pump started")
 
             # 메시지 펌프 루프
             while self._running:
@@ -224,11 +235,11 @@ class MessageListMonitor:
                 time.sleep(0.1)  # 100ms 간격
 
         except Exception as e:
-            log.error(f"이벤트 루프 오류: {e}")
+            log.error(f"event loop error: {e}")
         finally:
             self._unregister_event()
             pythoncom.CoUninitialize()
-            log.debug("이벤트 루프 종료")
+            log.debug("event loop terminated")
 
     def _try_register_event(self) -> bool:
         if not HAS_COMTYPES:
@@ -241,12 +252,12 @@ class MessageListMonitor:
             # 메시지 목록의 IUIAutomationElement 가져오기
             hwnd = self.list_control.NativeWindowHandle
             if not hwnd:
-                log.debug("list_control에 NativeWindowHandle 없음")
+                log.debug("list_control has no NativeWindowHandle")
                 return False
 
             self._root_element = self._uia.ElementFromHandle(hwnd)
             if not self._root_element:
-                log.debug("ElementFromHandle 실패")
+                log.debug("ElementFromHandle failed")
                 return False
 
             # StructureChanged 이벤트 핸들러 생성 및 등록
@@ -261,7 +272,7 @@ class MessageListMonitor:
                 self._event_handler
             )
 
-            log.info("MessageListMonitor: StructureChanged 이벤트 등록 성공")
+            log.info("MessageListMonitor: StructureChanged event registered")
 
             # NOTE: FocusChanged 이벤트는 비활성화됨
             # 전역 이벤트로 모든 포커스 변경을 수신해서 CPU 스파이크 유발
@@ -270,7 +281,7 @@ class MessageListMonitor:
             return True
 
         except Exception as e:
-            log.debug(f"이벤트 등록 실패: {e}")
+            log.debug(f"event registration failed: {e}")
             self._uia = None
             self._event_handler = None
             self._root_element = None
@@ -284,9 +295,9 @@ class MessageListMonitor:
                     self._root_element,
                     self._event_handler
                 )
-                log.debug("StructureChanged 이벤트 해제 완료")
+                log.debug("StructureChanged event unregistered")
         except Exception as e:
-            log.trace(f"이벤트 해제 오류: {e}")
+            log.trace(f"event unregister error: {e}")
         finally:
             self._uia = None
             self._event_handler = None
@@ -295,7 +306,11 @@ class MessageListMonitor:
 
     def _on_structure_changed(self, change_type: int) -> None:
         """200ms 디바운싱 후 _flush_pending_events 호출."""
-        if not self._running or self._paused:
+        if not self._running:
+            return
+        if self._paused:
+            # pause 중에는 플래그만 설정 (resume 시 체크)
+            self._missed_event_flag = True
             return
 
         # 디바운싱: 이벤트 버퍼링 후 200ms 후에 일괄 처리
@@ -317,7 +332,7 @@ class MessageListMonitor:
             self._debounce_timer.daemon = True
             self._debounce_timer.start()
 
-            log.trace(f"StructureChanged 버퍼링: type={change_type}, pending={self._pending_event_count}")
+            log.trace(f"StructureChanged buffered: type={change_type}, pending={self._pending_event_count}")
 
     def _flush_pending_events(self, generation: int) -> None:
         """stale 타이머 무시, 메시지 개수 변화 시 콜백 호출."""
@@ -331,7 +346,7 @@ class MessageListMonitor:
             with self._lock:
                 # stale 타이머 무시 (레이스 컨디션 방지)
                 if generation != self._debounce_generation:
-                    log.trace(f"stale 타이머 무시: gen={generation}, current={self._debounce_generation}")
+                    log.trace(f"stale timer ignored: gen={generation}, current={self._debounce_generation}")
                     return
 
                 pending = self._pending_event_count
@@ -350,19 +365,19 @@ class MessageListMonitor:
                         children=children  # 이미 가져온 children 전달
                     )
 
-                    log.debug(f"StructureChanged 플러시: pending={pending}, new={new_count}")
+                    log.debug(f"StructureChanged flushed: pending={pending}, new={new_count}")
 
                     if self._callback:
                         try:
                             self._callback(event)
                         except Exception as e:
-                            log.error(f"이벤트 콜백 오류: {e}")
+                            log.error(f"event callback error: {e}")
                 elif current_count < self._last_count:
                     # 메시지 삭제/스크롤 등
                     self._last_count = current_count
 
         except Exception as e:
-            log.trace(f"이벤트 플러시 오류: {e}")
+            log.trace(f"event flush error: {e}")
 
     def _on_focus_changed(self, sender) -> None:
         """Name이 빈 경우에만 자식에서 텍스트 추출. 있으면 NVDA에 위임."""
@@ -392,13 +407,13 @@ class MessageListMonitor:
                 if texts:
                     combined = " ".join(texts)
                     self._speak(combined)
-                    log.debug(f"FocusChanged 발화 (빈 Name 보완): {combined[:30]}...")
+                    log.debug(f"FocusChanged speak (empty Name fallback): {combined[:30]}...")
 
             except Exception as e:
-                log.trace(f"자식 텍스트 추출 실패: {e}")
+                log.trace(f"child text extraction failed: {e}")
 
         except Exception as e:
-            log.trace(f"FocusChanged 처리 오류: {e}")
+            log.trace(f"FocusChanged processing error: {e}")
 
     @property
     def is_running(self) -> bool:
@@ -415,3 +430,36 @@ class MessageListMonitor:
             "paused": self._paused,
             "last_count": self._last_count,
         }
+
+    def _check_missed_messages(self) -> None:
+        """pause 중 놓친 메시지 체크. resume() 에서 호출."""
+        if not self._running or not self._callback:
+            return
+
+        try:
+            children = self.list_control.GetChildren()
+            current_count = len(children) if children else 0
+
+            with self._lock:
+                if current_count > self._last_count:
+                    new_count = current_count - self._last_count
+                    self._last_count = current_count
+
+                    event = MessageEvent(
+                        new_count=new_count,
+                        timestamp=time.time(),
+                        source="missed",  # pause 중 놓친 메시지임을 표시
+                        children=children
+                    )
+
+                    log.debug(f"missed messages detected: {new_count}")
+
+                    try:
+                        self._callback(event)
+                    except Exception as e:
+                        log.error(f"missed message callback error: {e}")
+                elif current_count < self._last_count:
+                    self._last_count = current_count
+
+        except Exception as e:
+            log.trace(f"missed message check error: {e}")

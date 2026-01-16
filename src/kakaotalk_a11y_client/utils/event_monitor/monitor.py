@@ -62,7 +62,7 @@ class EventMonitor:
             성공 여부
         """
         if self._running:
-            log.warning("이미 실행 중")
+            log.warning("already running")
             return False
 
         self._callback = callback or self._default_callback
@@ -76,7 +76,7 @@ class EventMonitor:
         )
         self._thread.start()
 
-        log.info(f"EventMonitor 시작: events={[e.name for e in self._config.event_types]}")
+        log.info(f"EventMonitor started: events={[e.name for e in self._config.event_types]}")
         return True
 
     def stop(self) -> None:
@@ -86,7 +86,7 @@ class EventMonitor:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-        log.info("EventMonitor 중지됨")
+        log.info("EventMonitor stopped")
 
     def toggle_event(self, event_type: EventType) -> bool:
         """특정 이벤트 타입 토글. 런타임 변경.
@@ -142,7 +142,7 @@ class EventMonitor:
             )
         # TODO: WINDOW_OPENED, MENU_OPENED 등 추가
         else:
-            log.warning(f"미지원 이벤트 타입: {event_type}")
+            log.warning(f"unsupported event type: {event_type}")
             return None
 
     def _on_event(self, event: EventLog) -> None:
@@ -151,7 +151,7 @@ class EventMonitor:
             try:
                 self._callback(event)
             except Exception as e:
-                log.trace(f"콜백 오류: {e}")
+                log.trace(f"callback error: {e}")
 
     def _event_loop(self) -> None:
         """COM 초기화 → 핸들러 등록 → 메시지 펌프."""
@@ -167,10 +167,10 @@ class EventMonitor:
                 handler = self._create_handler(event_type)
                 if handler and handler.register(self._uia):
                     self._handlers[event_type] = handler
-                    log.debug(f"{event_type.name} 핸들러 등록됨")
+                    log.debug(f"{event_type.name} handler registered")
 
             if not self._handlers:
-                log.warning("등록된 핸들러 없음")
+                log.warning("no handlers registered")
 
             # 메시지 펌프 루프
             while self._running:
@@ -178,7 +178,7 @@ class EventMonitor:
                 time.sleep(TIMING_EVENT_PUMP_INTERVAL)
 
         except Exception as e:
-            log.error(f"이벤트 루프 오류: {e}")
+            log.error(f"event loop error: {e}")
         finally:
             # 모든 핸들러 해제
             for handler in self._handlers.values():
@@ -186,7 +186,7 @@ class EventMonitor:
             self._handlers.clear()
             self._uia = None
             pythoncom.CoUninitialize()
-            log.debug("이벤트 루프 종료")
+            log.debug("event loop terminated")
 
     def get_stats(self) -> dict:
         """현재 상태 반환."""

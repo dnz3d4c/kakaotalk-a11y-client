@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""통합 디버그 로깅. 로그 파일: <프로젝트>/logs/debug.log"""
+"""Unified debug logging with rotation. Log file: <project>/logs/debug.log"""
 
 import os
-import sys
 from datetime import datetime
 from enum import IntEnum
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional, TextIO
+from typing import Optional
 
 
 def _get_project_root() -> Path:
-    # debug.py 위치: src/kakaotalk_a11y_client/utils/debug.py (3단계 상위)
+    # debug.py location: src/kakaotalk_a11y_client/utils/debug.py (3 levels up)
     return Path(__file__).parent.parent.parent.parent
 
 
@@ -25,8 +25,8 @@ class LogLevel(IntEnum):
     NONE = 5
 
 
-# 환경변수에서 로그 레벨 결정
-# DEBUG=1 → DEBUG 레벨, DEBUG=2 → TRACE 레벨 (최상세)
+# Determine log level from environment variable
+# DEBUG=1 → DEBUG level, DEBUG=2 → TRACE level (most verbose)
 _env_debug = os.environ.get("DEBUG", "0")
 if _env_debug == "1":
     _global_level = LogLevel.DEBUG
@@ -35,29 +35,34 @@ elif _env_debug == "2":
 else:
     _global_level = LogLevel.NONE
 
-# 로그 파일 설정
-_log_file: Optional[TextIO] = None
+# Log file settings (RotatingFileHandler for size-based rotation)
+_file_handler: Optional[RotatingFileHandler] = None
 _log_file_path: Optional[Path] = None
 
 def _init_log_file() -> None:
-    global _log_file, _log_file_path
+    global _file_handler, _log_file_path
     if _global_level >= LogLevel.NONE:
         return
     try:
-        # 프로젝트 루트/logs 디렉토리
         logs_dir = _get_project_root() / "logs"
         logs_dir.mkdir(exist_ok=True)
 
         _log_file_path = logs_dir / "debug.log"
-        _log_file = open(_log_file_path, "a", encoding="utf-8")
-        _log_file.write(f"\n{'='*60}\n")
-        _log_file.write(f"Session started: {datetime.now().isoformat()}\n")
-        _log_file.write(f"{'='*60}\n")
-        _log_file.flush()
+        _file_handler = RotatingFileHandler(
+            _log_file_path,
+            maxBytes=1_048_576,  # 1MB
+            backupCount=3,       # debug.log, .1, .2, .3 (total 4MB max)
+            encoding='utf-8'
+        )
+        # Session start marker
+        _file_handler.stream.write(f"\n{'='*60}\n")
+        _file_handler.stream.write(f"Session started: {datetime.now().isoformat()}\n")
+        _file_handler.stream.write(f"{'='*60}\n")
+        _file_handler.flush()
     except Exception:
-        _log_file = None
+        _file_handler = None
 
-# 디버그 모드일 때만 로그 파일 초기화
+# Initialize log file only in debug mode
 if _global_level < LogLevel.NONE:
     _init_log_file()
 
@@ -70,23 +75,23 @@ class Logger:
 
     def _log(self, level: LogLevel, msg: str) -> None:
         if level >= self.level:
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]  # HH:MM:SS.mmm
-            prefix = f"[{timestamp}][{level.name}:{self.name}]"
-            line = f"{prefix} {msg}"
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            prefix = f"[{level.name}:{self.name}]"
+            line = f"{timestamp} {prefix} {msg}"
 
-            # 콘솔 출력
+            # Console output
             try:
                 print(line)
             except UnicodeEncodeError:
-                # Windows 콘솔 인코딩 문제 대응
+                # Handle Windows console encoding issues
                 clean = ''.join(c if ord(c) < 0x10000 else '?' for c in msg)
-                print(f"{prefix} {clean}")
+                print(f"{timestamp} {prefix} {clean}")
 
-            # 파일 출력
-            if _log_file:
+            # File output with rotation
+            if _file_handler:
                 try:
-                    _log_file.write(f"{line}\n")
-                    _log_file.flush()
+                    _file_handler.stream.write(f"{line}\n")
+                    _file_handler.flush()
                 except Exception:
                     pass
 
@@ -106,24 +111,24 @@ class Logger:
         self._log(LogLevel.ERROR, msg)
 
 
-# 로거 캐시
+# Logger cache
 _loggers: dict[str, Logger] = {}
 
 
 def get_logger(name: str) -> Logger:
-    """모듈별 로거 반환. 동일 이름은 캐싱."""
+    """Get module logger. Same name is cached."""
     if name not in _loggers:
         _loggers[name] = Logger(name)
     return _loggers[name]
 
 
 def set_global_level(level: LogLevel) -> None:
-    """전역 로그 레벨 설정. 기존 로거들도 업데이트."""
+    """Set global log level. Updates existing loggers."""
     global _global_level
     _global_level = level
     for logger in _loggers.values():
         logger.level = level
-    if _log_file is None and level < LogLevel.NONE:
+    if _file_handler is None and level < LogLevel.NONE:
         _init_log_file()
 
 
