@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .types import EventType, OutputFormat, DEFAULT_EVENT_TYPES
+from .types import (
+    EventType,
+    OutputFormat,
+    DEFAULT_EVENT_TYPES,
+    DEBUG_DEFAULT_EVENTS,
+    TRACE_DEFAULT_EVENTS,
+)
 
 
 @dataclass

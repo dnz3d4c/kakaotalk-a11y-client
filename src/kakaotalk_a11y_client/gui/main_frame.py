@@ -50,33 +50,56 @@ class MainFrame(wx.Frame):
 
     def check_for_update(self, manual: bool = False) -> None:
         """업데이트 확인. HTTP 요청을 별도 스레드에서 수행."""
-        from ..updater import is_frozen
+        from ..utils.debug import get_logger
 
-        # 개발 환경에서는 동작 안함
-        if not is_frozen():
-            if manual:
-                wx.MessageBox(
-                    "개발 환경에서는 업데이트를 사용할 수 없습니다.",
-                    "알림",
-                    wx.OK | wx.ICON_INFORMATION,
-                    self,
-                )
-            return
+        log = get_logger("MainFrame")
+
+        # 수동 확인 시 바쁨 커서 표시
+        if manual:
+            wx.BeginBusyCursor()
 
         def check_background():
             from ..updater import check_for_update as do_check
 
-            info = do_check()
-            wx.CallAfter(self._on_update_check_complete, info, manual)
+            log.debug("update check started")
+            try:
+                info = do_check()
+                error = None
+            except Exception as e:
+                log.error(f"update check failed: {e}")
+                info = None
+                error = str(e)
+            finally:
+                if manual:
+                    wx.CallAfter(wx.EndBusyCursor)
+
+            wx.CallAfter(self._on_update_check_complete, info, manual, error)
 
         thread = threading.Thread(target=check_background, daemon=True)
         thread.start()
 
-    def _on_update_check_complete(self, info, manual: bool) -> None:
+    def _on_update_check_complete(
+        self, info, manual: bool, error: str = None
+    ) -> None:
         """업데이트 확인 완료 후 GUI 스레드에서 결과 처리."""
+        from ..utils.debug import get_logger
         from .update_dialogs import run_update_flow, show_update_available
 
+        log = get_logger("MainFrame")
+
+        # 오류 발생 시
+        if error:
+            if manual:
+                wx.MessageBox(
+                    f"업데이트 확인 중 오류가 발생했습니다.\n\n{error}",
+                    "오류",
+                    wx.OK | wx.ICON_ERROR,
+                    self,
+                )
+            return
+
         if not info:
+            log.debug("update check completed: already latest version")
             if manual:
                 wx.MessageBox(
                     "현재 최신 버전을 사용 중입니다.",
@@ -87,6 +110,7 @@ class MainFrame(wx.Frame):
             return
 
         # 업데이트 알림
+        log.info(f"update available: {info.version}")
         if show_update_available(self, info):
             run_update_flow(self, info)
 

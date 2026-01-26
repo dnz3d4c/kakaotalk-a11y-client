@@ -21,7 +21,7 @@ from ...uia_events import (
     TreeScope_Subtree,
 )
 from ...debug import get_logger
-from ....window_finder import is_kakaotalk_window, is_kakaotalk_menu_window
+from ....window_finder import filter_kakaotalk_hwnd
 
 log = get_logger("EventMon_Struct")
 
@@ -119,25 +119,10 @@ class StructureHandler(BaseHandler):
     def _on_structure_event(self, sender, change_type: int, runtime_id) -> None:
         """StructureChanged 이벤트 처리."""
         try:
-            import win32gui
-
             # 카카오톡 필터링
             if self._config.include_only_kakaotalk:
-                hwnd = sender.CurrentNativeWindowHandle
-                if hwnd:
-                    if not (
-                        is_kakaotalk_window(hwnd) or
-                        is_kakaotalk_menu_window(hwnd)
-                    ):
-                        return
-                else:
-                    # hwnd 없으면 포그라운드 창 확인
-                    fg_hwnd = win32gui.GetForegroundWindow()
-                    if not fg_hwnd or not (
-                        is_kakaotalk_window(fg_hwnd) or
-                        is_kakaotalk_menu_window(fg_hwnd)
-                    ):
-                        return
+                if not filter_kakaotalk_hwnd(sender):
+                    return
 
             # changeType 변환
             try:

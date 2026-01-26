@@ -8,15 +8,29 @@ from typing import Any, Optional
 
 
 class EventType(Enum):
-    """UIA 이벤트 타입."""
-    FOCUS = "FocusChanged"
-    STRUCTURE = "StructureChanged"
-    PROPERTY = "PropertyChanged"
-    NOTIFICATION = "Notification"
-    WINDOW_OPENED = "WindowOpened"
-    WINDOW_CLOSED = "WindowClosed"
-    MENU_OPENED = "MenuOpened"
-    MENU_CLOSED = "MenuClosed"
+    """UIA 이벤트 타입.
+
+    값은 UIA 이벤트 ID 또는 설명 문자열.
+    ID 참고: https://learn.microsoft.com/windows/win32/winauto/uiauto-event-ids
+    """
+    # 핵심 이벤트
+    FOCUS = "FocusChanged"              # 20005
+    STRUCTURE = "StructureChanged"      # 20002
+    PROPERTY = "PropertyChanged"        # 20004
+
+    # 메뉴 이벤트
+    MENU_OPENED = "MenuOpened"          # 20003
+    MENU_CLOSED = "MenuClosed"          # 20007
+    MENU_MODE_START = "MenuModeStart"   # 20018
+    MENU_MODE_END = "MenuModeEnd"       # 20019
+
+    # 창 이벤트
+    WINDOW_OPENED = "WindowOpened"      # 20016
+    WINDOW_CLOSED = "WindowClosed"      # 20017
+
+    # 알림/라이브 영역
+    NOTIFICATION = "Notification"       # 20035
+    LIVE_REGION = "LiveRegionChanged"   # 20024
 
 
 class OutputFormat(Enum):
@@ -35,8 +49,25 @@ class StructureChangeType(Enum):
     CHILDREN_REORDERED = 4
 
 
-# 기본 활성화 이벤트 (Property는 기본 비활성)
+# 기본 활성화 이벤트 (--debug-events 수동 활성화 시)
 DEFAULT_EVENT_TYPES = frozenset({EventType.FOCUS, EventType.STRUCTURE})
+
+# --debug 모드 기본 이벤트 (포커스 + 구조 변경)
+DEBUG_DEFAULT_EVENTS = frozenset({
+    EventType.FOCUS,
+    EventType.STRUCTURE,
+})
+
+# --trace 모드 기본 이벤트 (전체 추적)
+TRACE_DEFAULT_EVENTS = frozenset({
+    EventType.FOCUS,
+    EventType.STRUCTURE,
+    EventType.PROPERTY,
+    EventType.MENU_OPENED,
+    EventType.MENU_CLOSED,
+    EventType.MENU_MODE_START,
+    EventType.MENU_MODE_END,
+})
 
 # 모든 이벤트
 ALL_EVENT_TYPES = frozenset(EventType)

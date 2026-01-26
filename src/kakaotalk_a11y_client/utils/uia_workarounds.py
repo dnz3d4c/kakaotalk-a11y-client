@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 import uiautomation as auto
 
 from .debug import get_logger
+from ..window_finder import KAKAOTALK_MENU_CLASS
 
 log = get_logger("UIA_Workaround")
 
@@ -103,7 +104,7 @@ def should_use_msaa(class_name: str) -> bool:
     # 카카오톡은 대부분 UIA 지원
     # 메뉴 항목 이름만 MSAA(LegacyIAccessible) 필요
     msaa_preferred = [
-        "EVA_Menu",  # KAKAO-002: 메뉴 항목 Name
+        KAKAOTALK_MENU_CLASS,  # KAKAO-002: 메뉴 항목 Name
     ]
     return class_name in msaa_preferred
 
@@ -131,8 +132,28 @@ def should_skip_element(control: auto.Control) -> bool:
 
 
 def get_element_name(control: auto.Control) -> str:
-    """요소 이름. MSAA 필요 시 LegacyIAccessible.Name 사용."""
+    """요소 이름. MenuItemControl은 MSAA 우선 (UIA 대기 없이)."""
     try:
+        # MenuItemControl은 MSAA 먼저 (카카오톡 레거시 패턴)
+        if control.ControlTypeName == 'MenuItemControl':
+            uia_name = control.Name or ""
+            try:
+                legacy = control.GetLegacyIAccessiblePattern()
+                if legacy:
+                    msaa_name = legacy.Name or ""
+                    if msaa_name:
+                        log.trace(f"[MSAA] MenuItemControl: '{msaa_name}' (UIA: '{uia_name}')")
+                        return msaa_name  # MSAA 성공하면 바로 반환
+                    else:
+                        log.trace(f"[MSAA-EMPTY] MenuItemControl: MSAA Name 비어있음 (UIA: '{uia_name}')")
+                else:
+                    log.trace(f"[MSAA-NONE] MenuItemControl: LegacyPattern=None (UIA: '{uia_name}')")
+            except Exception as e:
+                log.trace(f"[MSAA-ERROR] MenuItemControl: {e} (UIA: '{uia_name}')")
+            # MSAA 실패 시에만 UIA 폴백
+            log.trace(f"[UIA-FALLBACK] MenuItemControl: '{uia_name}'")
+            return uia_name
+
         class_name = control.ClassName or ""
 
         # MSAA 사용 권장 클래스

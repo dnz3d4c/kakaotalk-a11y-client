@@ -1,1 +1,1 @@
-# 테스트 패키지
+# SPDX-License-Identifier: MIT

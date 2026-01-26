@@ -95,15 +95,17 @@ class MessageMonitor:
             return False
 
         try:
-            # 메시지 목록 찾기
-            msg_list = self.chat_navigator.chat_control.ListControl(
-                Name="메시지",
-                searchDepth=SEARCH_DEPTH_MESSAGE_LIST
-            )
-
-            if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_LIST):
-                log.warning("message list not found, event mode failed")
-                return False
+            # 메시지 목록 찾기 (캐시 우선)
+            msg_list = self.chat_navigator.list_control
+            if not msg_list:
+                # 캐시 없으면 검색 (폴백)
+                msg_list = self.chat_navigator.chat_control.ListControl(
+                    Name="메시지",
+                    searchDepth=SEARCH_DEPTH_MESSAGE_LIST
+                )
+                if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_LIST):
+                    log.warning("message list not found, event mode failed")
+                    return False
 
             # MessageListMonitor 생성 및 시작
             self._list_monitor = MessageListMonitor(list_control=msg_list)
@@ -143,13 +145,14 @@ class MessageMonitor:
                 return []
 
             # children이 없으면 기존 방식 (폴백)
-            msg_list = self.chat_navigator.chat_control.ListControl(
-                Name="메시지",
-                searchDepth=SEARCH_DEPTH_MESSAGE_LIST
-            )
-
-            if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_FALLBACK):
-                return []
+            msg_list = self.chat_navigator.list_control
+            if not msg_list:
+                msg_list = self.chat_navigator.chat_control.ListControl(
+                    Name="메시지",
+                    searchDepth=SEARCH_DEPTH_MESSAGE_LIST
+                )
+                if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_FALLBACK):
+                    return []
 
             messages = get_children_recursive(msg_list, max_depth=2, filter_empty=True)
 

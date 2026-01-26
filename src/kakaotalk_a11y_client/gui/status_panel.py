@@ -84,7 +84,7 @@ class StatusPanel(wx.Panel):
         if self.clicker.mode_manager.in_selection_mode:
             mode = "이모지 선택"
             self.mode_label.SetForegroundColour(wx.Colour(0, 128, 0))
-        elif self.clicker.mode_manager.in_context_menu_mode:
+        elif self.clicker.focus_monitor.in_menu_mode:
             mode = "컨텍스트 메뉴"
             self.mode_label.SetForegroundColour(wx.Colour(0, 0, 128))
         elif self.clicker.mode_manager.in_navigation_mode:

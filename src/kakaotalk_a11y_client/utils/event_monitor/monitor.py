@@ -14,6 +14,7 @@ from .formatters import ConsoleFormatter, JsonFormatter, TableFormatter
 
 from ..uia_events import HAS_COMTYPES, _create_uia_client
 from ..debug import get_logger
+from ..com_utils import com_thread
 from ...config import TIMING_EVENT_PUMP_INTERVAL
 
 log = get_logger("EventMonitor")
@@ -156,37 +157,36 @@ class EventMonitor:
     def _event_loop(self) -> None:
         """COM 초기화 → 핸들러 등록 → 메시지 펌프."""
         import pythoncom
-        pythoncom.CoInitialize()
 
-        try:
-            # UIA 클라이언트 생성
-            self._uia = _create_uia_client()
+        with com_thread():
+            try:
+                # UIA 클라이언트 생성
+                self._uia = _create_uia_client()
 
-            # 활성화된 이벤트 핸들러 등록
-            for event_type in self._config.event_types:
-                handler = self._create_handler(event_type)
-                if handler and handler.register(self._uia):
-                    self._handlers[event_type] = handler
-                    log.debug(f"{event_type.name} handler registered")
+                # 활성화된 이벤트 핸들러 등록
+                for event_type in self._config.event_types:
+                    handler = self._create_handler(event_type)
+                    if handler and handler.register(self._uia):
+                        self._handlers[event_type] = handler
+                        log.debug(f"{event_type.name} handler registered")
 
-            if not self._handlers:
-                log.warning("no handlers registered")
+                if not self._handlers:
+                    log.warning("no handlers registered")
 
-            # 메시지 펌프 루프
-            while self._running:
-                pythoncom.PumpWaitingMessages()
-                time.sleep(TIMING_EVENT_PUMP_INTERVAL)
+                # 메시지 펌프 루프
+                while self._running:
+                    pythoncom.PumpWaitingMessages()
+                    time.sleep(TIMING_EVENT_PUMP_INTERVAL)
 
-        except Exception as e:
-            log.error(f"event loop error: {e}")
-        finally:
-            # 모든 핸들러 해제
-            for handler in self._handlers.values():
-                handler.unregister()
-            self._handlers.clear()
-            self._uia = None
-            pythoncom.CoUninitialize()
-            log.debug("event loop terminated")
+            except Exception as e:
+                log.error(f"event loop error: {e}")
+            finally:
+                # 모든 핸들러 해제
+                for handler in self._handlers.values():
+                    handler.unregister()
+                self._handlers.clear()
+                self._uia = None
+                log.debug("event loop terminated")
 
     def get_stats(self) -> dict:
         """현재 상태 반환."""

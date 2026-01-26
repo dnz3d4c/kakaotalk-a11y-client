@@ -9,7 +9,8 @@ from dataclasses import dataclass
 
 import uiautomation as auto
 
-from ..config import TIMING_RESUME_DEBOUNCE, TIMING_EVENT_PUMP_INTERVAL
+from ..config import TIMING_EVENT_PUMP_INTERVAL
+from .com_utils import com_thread
 
 # COM 인터페이스 import (uia_events에서)
 from .uia_events import (
@@ -77,8 +78,6 @@ class MessageListMonitor:
 
         self._running = False
         self._paused = False  # pause 상태 (이벤트 수신은 유지, 콜백만 무시)
-        self._pause_time = 0.0  # 마지막 pause 시각 (debounce용)
-        self._pause_complete = threading.Event()  # 동기식 pause용
         self._thread: Optional[threading.Thread] = None
         self._callback: Optional[Callable[[MessageEvent], None]] = None
         self._last_count = 0
@@ -87,12 +86,8 @@ class MessageListMonitor:
         # COM 객체
         self._uia = None
         self._event_handler = None  # StructureChanged 핸들러
-        self._focus_handler = None  # FocusChanged 핸들러
+        self._focus_handler = None  # FocusChanged 핸들러 (현재 미사용)
         self._root_element = None
-
-        # 핸들러 해제/재등록 요청 플래그 (스레드 안전)
-        self._pending_unregister = False
-        self._pending_register = False
 
         # 이벤트 디바운싱 (발화 끊김 방지)
         self._debounce_timer: Optional[threading.Timer] = None
@@ -145,44 +140,24 @@ class MessageListMonitor:
 
         log.debug("MessageListMonitor stopped")
 
-    def pause(self, wait: bool = True) -> None:
-        """핸들러 해제 요청. wait=True면 완료까지 대기 (최대 200ms)."""
+    def pause(self) -> None:
+        """이벤트 처리 일시정지. 핸들러는 유지, 콜백만 무시."""
         if not self._paused:
-            self._pause_complete.clear()
             self._paused = True
-            self._pause_time = time.time()
-
-            # 이벤트 핸들러 해제 요청 (이벤트 루프에서 실제 해제)
-            self._pending_unregister = True
-
-            if wait:
-                # 이벤트 루프가 해제 완료할 때까지 대기 (최대 200ms)
-                self._pause_complete.wait(timeout=0.2)
-
-            log.debug("MessageListMonitor paused (handler unregistered)")
+            log.debug("MessageListMonitor paused")
 
     def resume(self) -> None:
-        """핸들러 재등록 요청. pause 후 0.3초 이내면 무시."""
+        """이벤트 처리 재개. 즉시 처리 시작."""
         if self._paused:
-            # debounce: 너무 빠른 resume 방지
-            elapsed = time.time() - self._pause_time
-            if elapsed < TIMING_RESUME_DEBOUNCE:
-                log.trace(f"resume ignored (debounce: {elapsed:.2f}s < {TIMING_RESUME_DEBOUNCE}s)")
-                return
-
             # pause 중 놓친 메시지 체크
             missed = self._missed_event_flag
             self._missed_event_flag = False
             self._paused = False
 
-            # 이벤트 핸들러 재등록 요청 (이벤트 루프에서 실제 등록)
-            if self._running:
-                self._pending_register = True
-
-            log.debug("MessageListMonitor resumed (handler re-registered)")
+            log.debug("MessageListMonitor resumed")
 
             # 놓친 메시지가 있으면 체크
-            if missed:
+            if missed and self._running:
                 self._check_missed_messages()
 
     @property
@@ -200,46 +175,30 @@ class MessageListMonitor:
 
     def _event_loop(self) -> None:
         import pythoncom
-        pythoncom.CoInitialize()
 
-        try:
-            # 이 스레드에서 이벤트 등록
-            success = self._try_register_event()
-            if not success:
-                log.error("event registration failed - message monitoring unavailable")
-                return
+        with com_thread():
+            try:
+                # 이 스레드에서 이벤트 등록
+                success = self._try_register_event()
+                if not success:
+                    log.error("event registration failed - message monitoring unavailable")
+                    return
 
-            log.info("MessageListMonitor: message pump started")
+                log.info("MessageListMonitor: message pump started")
 
-            # 메시지 펌프 루프
-            while self._running:
-                # 핸들러 해제 요청 처리 (같은 스레드에서 해제 - COM 규칙)
-                if self._pending_unregister:
-                    self._pending_unregister = False
-                    self._unregister_event()
-                    self._pause_complete.set()  # pause 완료 신호
-
-                # 핸들러 재등록 요청 처리
-                if self._pending_register:
-                    self._pending_register = False
-                    self._try_register_event()
-
-                # pause 상태: 이벤트 펌프 스킵 (NVDA가 메뉴 읽기)
-                if self._paused:
+                # 메시지 펌프 루프
+                # 핸들러는 항상 등록 상태 유지, pause 시 콜백에서 무시
+                while self._running:
+                    # 이벤트 펌프 (StructureChanged 콜백 처리)
+                    # pause 상태여도 펌프는 계속 (이벤트 수신은 유지)
+                    pythoncom.PumpWaitingMessages()
                     time.sleep(TIMING_EVENT_PUMP_INTERVAL)
-                    continue
 
-                # 이벤트 펌프 (StructureChanged 콜백 처리)
-                pythoncom.PumpWaitingMessages()
-
-                time.sleep(0.1)  # 100ms 간격
-
-        except Exception as e:
-            log.error(f"event loop error: {e}")
-        finally:
-            self._unregister_event()
-            pythoncom.CoUninitialize()
-            log.debug("event loop terminated")
+            except Exception as e:
+                log.error(f"event loop error: {e}")
+            finally:
+                self._unregister_event()
+                log.debug("event loop terminated")
 
     def _try_register_event(self) -> bool:
         if not HAS_COMTYPES:

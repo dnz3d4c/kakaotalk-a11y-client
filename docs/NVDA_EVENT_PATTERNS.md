@@ -15,10 +15,10 @@
 **현재 방식**:
 - `AddFocusChangedEventHandler()`로 이벤트 등록
 - 포커스 변경 시에만 콜백 호출
-- 폴링 폴백 유지 (이벤트 실패 시)
+- 순수 이벤트 기반 (폴링 폴백 제거됨, 2026-01)
 
 **위치**: `src/kakaotalk_a11y_client/utils/uia_events.py`
-- `HybridFocusMonitor._event_loop()`: 이벤트 스레드
+- `FocusMonitor`: 이벤트 기반 포커스 모니터
 - `FocusChangedHandler`: COM 콜백 핸들러
 
 **효과**:

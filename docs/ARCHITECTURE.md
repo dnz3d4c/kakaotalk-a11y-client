@@ -52,7 +52,6 @@ src/kakaotalk_a11y_client/
 ├── focus_monitor.py        # 포커스 모니터링 서비스 (이벤트 기반)
 ├── mode_manager.py         # 모드 전환 관리 (Navigation/Menu)
 ├── hotkeys.py              # RegisterHotKey 기반 전역 핫키
-├── mouse_hook.py           # 마우스 훅 (비메시지 항목 우클릭 차단)
 ├── accessibility.py        # 음성 출력 추상화
 ├── window_finder.py        # 카카오톡 창 탐색
 ├── detector.py             # 이모지 탐지 (OpenCV)
@@ -86,6 +85,7 @@ src/kakaotalk_a11y_client/
     ├── uia_message_monitor.py # StructureChanged 메시지 모니터
     ├── uia_cache_request.py # UIA CacheRequest 관리
     ├── uia_workarounds.py  # 카카오톡 UIA 우회
+    ├── menu_handler.py     # 컨텍스트 메뉴 감지/상태/처리 통합
     ├── beep.py             # 테스트/디버그용 비프음
     ├── debug.py            # 로깅
     ├── debug_config.py     # 디버그 설정 관리
@@ -128,11 +128,12 @@ src/kakaotalk_a11y_client/
 | uia_reliability.py | UIA 신뢰도 판단 (클래스별 선택) | ~70 |
 | uia_exceptions.py | COMError 안전 래퍼 | ~75 |
 | uia_tree_dump.py | UIA 트리 덤프/비교 | ~326 |
-| uia_cache.py | UIA 캐싱 (메시지, 메뉴, 창) | ~215 |
+| uia_cache.py | UIA 캐싱 (메시지 목록용) | ~215 |
 | uia_events.py | UIA COM 초기화 (+ re-export) | ~134 |
 | uia_focus_handler.py | FocusChanged 이벤트 모니터 | ~254 |
 | uia_message_monitor.py | StructureChanged 메시지 모니터 | ~350 |
 | uia_workarounds.py | 카카오톡 특수 UIA 우회 | ~190 |
+| menu_handler.py | 메뉴 감지/상태/처리 통합 (MenuHandler) | ~308 |
 
 ### 아키텍처 평가 지표
 
@@ -152,7 +153,7 @@ src/kakaotalk_a11y_client/
 ┌──────────────────┴──────────────────────────┐
 │           Domain                             │
 │  navigation/ │ detector.py │ hotkeys.py     │
-│  clicker.py  │ mouse_hook.py │ settings.py  │
+│  clicker.py  │ settings.py                  │
 └──────────────────┬──────────────────────────┘
                    ↓
 ┌──────────────────┴──────────────────────────┐
@@ -230,34 +231,7 @@ class HotkeyManager:
 
 RegisterHotKey API를 사용하기 때문에 NVDA 같은 스크린 리더와 충돌 없이 동작합니다.
 
-### 3.3 MouseHook (mouse_hook.py)
-
-WH_MOUSE_LL 훅을 사용해 비메시지 항목에서 우클릭을 차단합니다.
-
-**차단 대상:**
-- 날짜 구분자 (`2026년 1월 2일 금요일`)
-- 읽지 않음 구분선 (`읽지 않은 메시지`)
-- 입퇴장 알림 (`님이 들어왔습니다`, `님이 나갔습니다`)
-
-**설계 결정:**
-
-메뉴가 열린 후 ESC로 닫는 방식은 메뉴가 열렸다 닫히는 UX 문제가 있습니다. WH_MOUSE_LL 훅으로 우클릭 자체를 차단하면 팝업메뉴가 아예 열리지 않아 더 자연스럽습니다.
-
-```python
-class MouseHook:
-    # 비메시지 패턴 (팝업메뉴 차단 대상)
-    NON_MESSAGE_PATTERNS = ["년 ", "읽지 않은 메시지", ...]
-
-    def _mouse_callback(self, nCode, wParam, lParam):
-        if wParam == WM_RBUTTONDOWN:
-            if self._is_non_message_item(last_focused_name):
-                return 1  # 이벤트 차단
-        return CallNextHookEx(...)
-```
-
-주의: 마우스 훅은 시스템 전체에 영향을 주므로, 현재 포커스된 항목(`_last_focused_name`)이 비메시지 패턴일 때만 차단합니다.
-
-### 3.4 ChatRoomNavigator (navigation/chat_room.py)
+### 3.3 ChatRoomNavigator (navigation/chat_room.py)
 
 채팅방 메시지를 UIA로 탐색하는 클래스입니다.
 
@@ -275,7 +249,7 @@ class ChatRoomNavigator:
 - `exit_chat_room()`: 채팅방 이탈, 리소스 정리
 - `refresh_messages()`: 메시지 목록 새로고침
 
-### 3.5 FocusMonitorService (focus_monitor.py)
+### 3.4 FocusMonitorService (focus_monitor.py)
 
 포커스 변경을 감지하고 적절한 항목을 읽어주는 서비스입니다.
 
@@ -285,16 +259,17 @@ class FocusMonitorService:
     _message_monitor: MessageMonitor
     _chat_navigator: ChatRoomNavigator
     _focus_monitor: FocusMonitor  # UIA FocusChanged 이벤트 처리
+    _menu_handler: MenuHandler    # 메뉴 상태/처리 위임
 ```
 
 주요 기능:
 
 - **FocusChanged 이벤트 기반**: UIA `AddFocusChangedEventHandler()` 사용
-- **ListItem/TabItem 읽기**: 목록 항목, 탭 항목 포커스 시 자동 읽기
-- **메뉴 모드 관리**: EVA_Menu 창 감지 시 컨텍스트 메뉴 모드 진입
+- **ListItem 읽기**: 목록 항목 포커스 시 자동 읽기 (TabItem은 NVDA에 위임)
+- **메뉴 처리 위임**: MenuHandler에 메뉴 감지/상태/항목 처리 위임
 - **채팅방 자동 진입**: 채팅방 창 감지 시 네비게이션 모드 진입
 
-### 3.6 MessageMonitor (navigation/message_monitor.py)
+### 3.5 MessageMonitor (navigation/message_monitor.py)
 
 새 메시지를 자동으로 읽어주는 클래스입니다.
 

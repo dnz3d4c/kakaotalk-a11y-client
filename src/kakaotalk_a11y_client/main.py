@@ -26,7 +26,6 @@ from .accessibility import (
     announce_selection,
 )
 from .hotkeys import HotkeyManager, wait_for_exit
-from .mouse_hook import MouseHook
 from .navigation import ChatRoomNavigator
 from .navigation.message_monitor import MessageMonitor
 from .mode_manager import ModeManager
@@ -60,9 +59,6 @@ class EmojiClicker:
             chat_navigator=self.chat_navigator,
             hotkey_manager=self.hotkey_manager,
         )
-
-        # 마우스 훅 (비메시지 항목 우클릭 차단)
-        self.mouse_hook = MouseHook(lambda: self.focus_monitor.last_focused_name)
 
     def initialize(self) -> bool:
         """템플릿 로드 및 핫키 등록. 실패 시 False."""
@@ -174,9 +170,6 @@ class EmojiClicker:
         else:
             log.debug("UIA check passed")
 
-        # 마우스 훅 설치 (비메시지 항목 우클릭 차단)
-        self.mouse_hook.install()
-
         self.hotkey_manager.start()
         self.focus_monitor.start()
 
@@ -218,9 +211,6 @@ class EmojiClicker:
 
         # 3. hotkey_manager 정리
         self.hotkey_manager.cleanup()
-
-        # 4. 마우스 훅 해제
-        self.mouse_hook.uninstall()
 
         speak("종료")
         time.sleep(0.3)  # 스크린 리더가 읽을 시간 확보
@@ -340,19 +330,27 @@ def main() -> int:
             print("[DEBUG] 디버그 모드 활성화")
         init_profiler(enabled=True)
 
-        # 이벤트 모니터 설정 생성
-        event_monitor_config = None
+        # 이벤트 모니터 설정 생성 (--debug 시 자동 활성화)
+        from .utils.event_monitor import EventMonitorConfig
+        from .utils.event_monitor.types import DEBUG_DEFAULT_EVENTS, TRACE_DEFAULT_EVENTS
+
         if args.debug_events is not None:
-            from .utils.event_monitor import EventMonitorConfig
+            # 명시적 --debug-events 옵션 사용
             event_monitor_config = EventMonitorConfig.from_cli_args(
                 events_arg=args.debug_events if args.debug_events != 'default' else None,
                 filter_arg=args.debug_events_filter,
                 format_arg=args.debug_events_format,
             )
+        else:
+            # --debug 기본 이벤트 모니터 (Focus + Structure)
+            # --trace 시 확장 이벤트 (+ Property, Menu*)
+            default_events = TRACE_DEFAULT_EVENTS if args.trace else DEBUG_DEFAULT_EVENTS
+            event_monitor_config = EventMonitorConfig(event_types=set(default_events))
+            print(f"[DEBUG] 이벤트 모니터 자동 활성화: {', '.join(e.name for e in default_events)}")
 
         init_debug_mode(
             enabled=True,
-            enable_event_monitor=args.debug_events is not None,
+            enable_event_monitor=True,  # --debug 시 항상 활성화
             event_monitor_config=event_monitor_config,
             enable_suggest_mode=args.debug_events_suggest,
         )

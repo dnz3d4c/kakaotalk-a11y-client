@@ -547,6 +547,43 @@ def IUIAutomationFocusChangedEventHandler_HandleFocusChangedEvent(sender):
     eventHandler.queueEvent("gainFocus", obj)
 ```
 
+#### 3.4.1 shouldAllowUIAFocusEvent 상세 (2026-01-25 추가)
+
+FocusChanged 이벤트 수신 후 실제 포커스 보유 여부를 2차 검증하는 메커니즘.
+
+**NVDA 구현:** `NVDAObjects/UIA/__init__.py:1579-1583`
+
+```python
+def _get_shouldAllowUIAFocusEvent(self):
+    """HasKeyboardFocus 속성 조회로 실제 키보드 포커스 확인"""
+    try:
+        return bool(self._getUIACacheablePropertyValue(UIA_HasKeyboardFocusPropertyId))
+    except COMError:
+        return True  # 속성 조회 실패 시 허용
+```
+
+**핵심 포인트:**
+- `HasKeyboardFocus`는 **속성 조회** (PropertyChanged 이벤트 아님)
+- FocusChanged 이벤트 → 객체 생성 후 → `shouldAllowUIAFocusEvent` 체크
+- False 반환 시 이벤트 무시 (실제 포커스 없음)
+
+**프로젝트 적용:** `uia_focus_handler.py:_on_focus_event()`에서 `sender.CurrentHasKeyboardFocus` 체크
+
+#### 3.4.2 shouldAllowDuplicateUIAFocusEvent 상세
+
+**NVDA 구현:** `NVDAObjects/UIA/__init__.py:1140`
+
+```python
+shouldAllowDuplicateUIAFocusEvent = False  # 기본값
+```
+
+**동작:**
+- 기본 False → 같은 요소에 대한 연속 포커스 이벤트 차단
+- `compareElements()` + `currentHasKeyboardFocus`로 중복 판정
+- 특정 컨트롤 (PlaceholderNetUITWMenuItem 등)에서 True로 오버라이드
+
+**프로젝트 현황:** RuntimeID 기반 중복 체크로 동일 효과 달성
+
 ### 3.5 FocusLossCancellableSpeechCommand
 
 ```python
@@ -579,7 +616,7 @@ class FocusLossCancellableSpeechCommand:
 | 즉시 | C. CacheRequest 확대 | ✅ 적용 | commit 3494656 |
 | 중기 | A. FocusChanged 이벤트 | ⏸️ 보류 | 전역 이벤트 CPU 부담, 현재 폴링 충분 |
 | 중기 | B. 하이브리드 모드 | ⏸️ 보류 | A 의존 |
-| 중기 | C. 이벤트 병합 | ✅ 적용 | commit 8ad3f1c, 200ms 디바운싱 |
+| 중기 | C. 이벤트 병합 | ✅ 적용 | EventCoalescer 20ms, 디바운싱 30ms |
 | 장기 | A. MTA 아키텍처 | ❌ 미적용 | 대규모 리팩토링 필요 |
 | 장기 | B. TreeWalker | ❌ 미적용 | searchDepth로 충분 |
 | 장기 | C. IUIAutomation6 | ✅ 적용 | commit 553ab28, CUIAutomation8 사용 |
@@ -683,29 +720,16 @@ class FocusChangedHandler(COMObject):
 
 #### B. 하이브리드 모드 (이벤트 + 폴링)
 
+> **2026-01 업데이트**: 현재 프로젝트는 `FocusMonitor`로 단순화됨 (순수 이벤트 기반, 폴링 폴백 제거).
+> 아래는 NVDA 패턴 참고용 과거 설계.
+
 ```python
-class HybridFocusMonitor:
-    def __init__(self):
-        self._use_events = HAS_COMTYPES
-        self._event_failure_count = 0
-        self._max_failures = 3
-
+class FocusMonitor:
+    """순수 이벤트 기반 포커스 모니터 (2026-01 현재)"""
     def start(self):
-        if self._use_events:
-            success = self._register_focus_event()
-            if not success:
-                self._use_events = False
-
-        if not self._use_events:
-            self._start_polling()  # 폴백
-
-    def _on_event_error(self, error):
-        self._event_failure_count += 1
-        if self._event_failure_count >= self._max_failures:
-            log.warning("이벤트 불안정, 폴링으로 전환")
-            self._use_events = False
-            self._unregister_events()
-            self._start_polling()
+        self._uia.AddFocusChangedEventHandler(
+            self._cache_request, self._handler
+        )
 ```
 
 #### C. 이벤트 병합
@@ -850,7 +874,7 @@ def _negotiate_interface(self):
 | 포커스 조회 | 3-5회 COM | 1회 (BuildCache) | ✅ CacheRequest 적용 |
 | 포커스 비교 | compareElements | compareElements | ✅ 적용 완료 |
 | 이벤트 | 전역+로컬 분리 | 폴링 중심 | 폴링 유지 (CPU 부담 적음) |
-| 이벤트 병합 | OrderedWinEventLimiter | 200ms 디바운싱 | ✅ 적용 |
+| 이벤트 병합 | OrderedWinEventLimiter | EventCoalescer 20ms, 디바운싱 30ms | ✅ 적용 |
 | COM 호출 감소 | ~30-40% | 60-65% | ✅ 달성 |
 
 ---

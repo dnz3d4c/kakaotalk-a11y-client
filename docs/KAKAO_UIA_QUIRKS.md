@@ -27,7 +27,43 @@ NVDA 소스코드의 workaround 주석 스타일(#숫자:)을 적용했습니다
 
 ---
 
-## #KAKAO-002: Chromium 광고 영역 UIA 불안정
+## #KAKAO-002: 메뉴 항목 UIA Name 없음
+
+### 현상
+- 채팅방 컨텍스트 메뉴(`EVA_Menu`)의 MenuItem이 UIA Name 없음
+- MSAA LegacyIAccessible.Name은 존재하나 불안정
+
+### 영향
+- 메뉴 항목 이름 읽기 불가
+
+### 대응
+- 하드코딩된 `CHATROOM_MESSAGE_MENU_ITEMS` 사용
+- MSAA 폴백 (불안정)
+
+### 코드 위치
+- `utils/uia_workarounds.py:CHATROOM_MESSAGE_MENU_ITEMS`
+
+---
+
+## #KAKAO-003: 메뉴 팝업 지연
+
+### 현상
+- 우클릭 후 `EVA_Menu`가 UIA에 즉시 노출되지 않음
+- 150ms+ 지연 발생
+
+### 영향
+- 메뉴 감지 실패 가능
+
+### 대응
+- 적응형 재시도 (150ms 시작, 최대 7회)
+- 지수 백오프 적용
+
+### 코드 위치
+- `utils/uia_workarounds.py:_find_popup_menu`
+
+---
+
+## #KAKAO-004: Chromium 광고 영역 UIA 불안정
 
 ### 현상
 - `Chrome_WidgetWin_*`, `Chrome_RenderWidgetHostHWND` 클래스에서 UIA 접근 불안정
@@ -43,11 +79,11 @@ NVDA 소스코드의 workaround 주석 스타일(#숫자:)을 적용했습니다
 - `is_good_uia_element()` 함수로 필터링
 
 ### 코드 위치
-- `utils/uia_utils.py:KAKAO_BAD_UIA_CLASSES`
+- `utils/uia_reliability.py:KAKAO_BAD_UIA_CLASSES`
 
 ---
 
-## #KAKAO-003: AutomationId 불규칙
+## #KAKAO-005: AutomationId 불규칙
 
 ### 현상
 - AutomationId가 숫자만(예: "123456")
@@ -68,7 +104,7 @@ NVDA 소스코드의 workaround 주석 스타일(#숫자:)을 적용했습니다
 
 ---
 
-## #KAKAO-004: ClassName 대부분 없음
+## #KAKAO-006: ClassName 대부분 없음
 
 ### 현상
 - 대다수 컨트롤의 ClassName이 빈 문자열
@@ -82,7 +118,7 @@ NVDA 소스코드의 workaround 주석 스타일(#숫자:)을 적용했습니다
 - Name + ControlType 우선 사용
 
 ### 코드 위치
-- `utils/uia_utils.py:KAKAO_GOOD_UIA_CLASSES`
+- `utils/uia_reliability.py:KAKAO_GOOD_UIA_CLASSES`
 
 ---
 

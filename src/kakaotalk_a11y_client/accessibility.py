@@ -35,9 +35,14 @@ def speak(text: str, interrupt: bool = False) -> bool:
             if interrupt:
                 # 이전 발화 중단 필요 시 음성만
                 _ao2_output.speak(text, interrupt=True)
+                _get_logger().trace(f"speech only (interrupt): {text!r}")
             else:
                 # 일반 출력: 음성 + 점자
-                _ao2_output.output(text)
+                # Note: Auto.output()은 braille()를 호출하지 않는 라이브러리 버그가 있어
+                # speak()와 braille()를 명시적으로 분리 호출
+                _ao2_output.speak(text)
+                _ao2_output.braille(text)
+                _get_logger().trace(f"speech + braille: {text!r}")
             return True
         except Exception:
             pass

@@ -9,13 +9,15 @@ try:
 except ImportError:
     COMError = Exception
 
+from ..window_finder import KAKAOTALK_MENU_CLASS
+
 
 # UIA가 잘 동작하는 카카오톡 클래스
 KAKAO_GOOD_UIA_CLASSES = [
     "EVA_Window",
     "EVA_Window_Dblclk",
     "EVA_VH_ListControl_Dblclk",
-    "EVA_Menu",
+    KAKAOTALK_MENU_CLASS,
 ]
 
 # UIA가 불안정한 클래스 (무시하거나 폴백)

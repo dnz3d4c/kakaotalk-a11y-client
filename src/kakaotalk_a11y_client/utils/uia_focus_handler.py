@@ -11,16 +11,33 @@ import uiautomation as auto
 
 from ..config import TIMING_EVENT_PUMP_INTERVAL
 from .debug import get_logger
-from ..window_finder import is_kakaotalk_window, is_kakaotalk_menu_window
+from ..window_finder import filter_kakaotalk_hwnd
 from .event_coalescer import EventCoalescer
+from .com_utils import com_thread
 
 # COM 인터페이스 import (uia_events에서)
 from .uia_events import (
     HAS_COMTYPES,
-    COMObject,
-    IUIAutomationFocusChangedEventHandler,
+    COMError,
     _create_uia_client,
+    FocusChangedHandler,
 )
+
+# CacheRequest 속성 ID (NVDA 패턴)
+try:
+    from comtypes.gen.UIAutomationClient import (
+        UIA_ControlTypePropertyId,
+        UIA_NamePropertyId,
+        UIA_ClassNamePropertyId,
+        UIA_RuntimeIdPropertyId,
+    )
+    HAS_CACHE_PROPS = True
+except ImportError:
+    HAS_CACHE_PROPS = False
+    UIA_ControlTypePropertyId = None
+    UIA_NamePropertyId = None
+    UIA_ClassNamePropertyId = None
+    UIA_RuntimeIdPropertyId = None
 
 log = get_logger("UIA_Focus")
 
@@ -32,22 +49,7 @@ class FocusEvent:
     source: str  # "event" or "polling"
 
 
-class FocusChangedHandler(COMObject):
-    """FocusChanged COM 콜백."""
-
-    if HAS_COMTYPES:
-        _com_interfaces_ = [IUIAutomationFocusChangedEventHandler]
-
-    def __init__(self, callback):
-        super().__init__()
-        self._callback = callback
-
-    def HandleFocusChangedEvent(self, sender):
-        if self._callback and sender:
-            try:
-                self._callback(sender)
-            except Exception as e:
-                log.trace(f"FocusChanged callback error: {e}")
+# FocusChangedHandler는 uia_events.py에서 import
 
 
 class FocusMonitor:
@@ -135,35 +137,49 @@ class FocusMonitor:
     def _event_loop(self) -> None:
         """COM 초기화 → AddFocusChangedEventHandler → 메시지 펌프."""
         import pythoncom
-        pythoncom.CoInitialize()
 
-        try:
-            # UIA 클라이언트 생성 (이 스레드에서)
-            self._uia = _create_uia_client()
+        with com_thread():
+            try:
+                # UIA 클라이언트 생성 (이 스레드에서)
+                self._uia = _create_uia_client()
 
-            # FocusChanged 이벤트 핸들러 생성 및 등록
-            self._event_handler = FocusChangedHandler(
-                callback=self._on_focus_event
-            )
+                # CacheRequest 생성 (NVDA 패턴: COM 왕복 감소)
+                cache_request = None
+                if HAS_CACHE_PROPS:
+                    try:
+                        cache_request = self._uia.CreateCacheRequest()
+                        cache_request.AddProperty(UIA_ControlTypePropertyId)
+                        cache_request.AddProperty(UIA_NamePropertyId)
+                        cache_request.AddProperty(UIA_ClassNamePropertyId)
+                        cache_request.AddProperty(UIA_RuntimeIdPropertyId)
+                        log.debug("FocusChanged CacheRequest created (4 properties)")
+                    except Exception as e:
+                        log.debug(f"CacheRequest creation failed: {e}")
+                        cache_request = None
 
-            self._uia.AddFocusChangedEventHandler(
-                None,  # cacheRequest (선택적)
-                self._event_handler
-            )
+                # FocusChanged 이벤트 핸들러 생성 및 등록
+                self._event_handler = FocusChangedHandler(
+                    callback=self._on_focus_event,
+                    logger=log
+                )
 
-            log.info("AddFocusChangedEventHandler registered")
+                self._uia.AddFocusChangedEventHandler(
+                    cache_request,  # CacheRequest (NVDA 패턴)
+                    self._event_handler
+                )
 
-            # 메시지 펌프 루프
-            while self._running:
-                pythoncom.PumpWaitingMessages()
-                time.sleep(TIMING_EVENT_PUMP_INTERVAL)
+                log.info("AddFocusChangedEventHandler registered")
 
-        except Exception as e:
-            log.error(f"event loop error: {e}")
-        finally:
-            self._cleanup_event_handler()
-            pythoncom.CoUninitialize()
-            log.debug("event loop terminated")
+                # 메시지 펌프 루프
+                while self._running:
+                    pythoncom.PumpWaitingMessages()
+                    time.sleep(TIMING_EVENT_PUMP_INTERVAL)
+
+            except Exception as e:
+                log.error(f"event loop error: {e}")
+            finally:
+                self._cleanup_event_handler()
+                log.debug("event loop terminated")
 
     def _cleanup_event_handler(self) -> None:
         try:
@@ -182,21 +198,27 @@ class FocusMonitor:
             return
 
         try:
+            # 디버그: 모든 이벤트 진입 로그
+            control_type_id = None
+            try:
+                control_type_id = sender.CurrentControlType
+            except Exception:
+                pass
+            log.trace(f"[RAW] focus event: type_id={control_type_id}")
+
             # 1. 시간 기반 디바운싱 (30ms) - Phase 1에서 효과 입증
             now = time.time()
             if now - self._last_event_time < 0.03:
+                log.trace("[SKIP] debounce 30ms")
                 return
             self._last_event_time = now
 
-            import win32gui
             # 2. 창 핸들 확인 - 카카오톡 창 외 즉시 무시
-            hwnd = sender.CurrentNativeWindowHandle
+            # filter_kakaotalk_hwnd: 직접 hwnd → 포그라운드 → 캐시 순으로 폴백
+            native_hwnd = sender.CurrentNativeWindowHandle
+            hwnd = filter_kakaotalk_hwnd(sender)
             if not hwnd:
-                fg_hwnd = win32gui.GetForegroundWindow()
-                if not fg_hwnd or not (is_kakaotalk_window(fg_hwnd) or is_kakaotalk_menu_window(fg_hwnd)):
-                    return
-                hwnd = fg_hwnd
-            elif not (is_kakaotalk_window(hwnd) or is_kakaotalk_menu_window(hwnd)):
+                log.trace(f"[SKIP] hwnd filter: native={native_hwnd}")
                 return
 
             # 3. RuntimeID 기반 중복 체크 (CompareElements 대체)
@@ -206,25 +228,44 @@ class FocusMonitor:
                 runtime_id = (id(sender),)  # 폴백
 
             if runtime_id == self._last_runtime_id:
+                log.trace("[SKIP] duplicate RuntimeId")
                 return
             self._last_runtime_id = runtime_id
 
             # 4. Control 변환
             focused = auto.Control(element=sender)
             if not focused:
+                log.trace("[SKIP] Control conversion failed")
                 return
 
-            # 5. FocusEvent 생성 + coalescer에 추가
+            # 5. Chrome_* 요소 무시 (광고 웹뷰)
+            if (focused.ClassName or "").startswith("Chrome_"):
+                log.trace("[SKIP] Chrome_* element")
+                return
+
+            # 6. MenuItemControl + "Menu Item" 무시 (아직 안 그려진 메뉴)
+            # 콜백 호출 자체를 줄여서 CPU 절약
+            name = focused.Name or ""
+            if focused.ControlTypeName == "MenuItemControl" and (not name or name == "Menu Item"):
+                return  # 로그도 안 찍고 완전 무시
+
+            log.trace(f"[PASS] {focused.ControlTypeName}: {name[:20]}")
+
+            # 7. FocusEvent 생성 + 즉시 처리 (NVDA gainFocus 패턴)
             event = FocusEvent(
                 control=focused,
                 timestamp=now,
                 source="event"
             )
 
-            # Phase 2: coalescer가 배치로 처리 (같은 키는 최신만 유지)
+            # 포커스 이벤트는 즉시 처리 (NVDA gainFocus 패턴)
+            # immediate=True로 20ms 배치 지연 없이 바로 콜백 호출
             key = (runtime_id, "focus")
-            self._coalescer.add(key, event)
+            self._coalescer.add(key, event, immediate=True)
 
+        except COMError:
+            # COM 에러는 예상 가능 (요소 사라짐, 창 닫힘 등) - 무시
+            pass
         except Exception as e:
             log.error(f"focus event processing error: {e}")
 

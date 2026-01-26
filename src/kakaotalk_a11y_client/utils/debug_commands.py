@@ -19,6 +19,9 @@ from .debug_config import debug_config
 from .debug_tools import debug_tools, KakaoNotFoundError
 from .profiler import profiler
 from .event_monitor import EventMonitor, EventLog
+from .debug import get_logger
+
+log = get_logger("DebugCommands")
 
 
 _event_monitor_active = False
@@ -244,10 +247,11 @@ def register_debug_hotkeys():
     global _registered_hotkeys
 
     if not debug_config.enabled:
+        log.debug("debug_config.enabled=False, skipping debug hotkeys")
         return
 
     if not HAS_KEYBOARD:
-        print("[DEBUG] keyboard 패키지 미설치 - 디버그 단축키 비활성화")
+        log.warning("keyboard 패키지 미설치 - 디버그 단축키 비활성화")
         return
 
     from ..settings import get_settings, DEBUG_HOTKEY_NAMES
@@ -265,10 +269,11 @@ def register_debug_hotkeys():
     settings = get_settings()
     debug_hotkeys = settings.get_all_debug_hotkeys()
 
-    print("[DEBUG] 디버그 단축키 활성화:")
+    log.info(f"디버그 단축키 등록 시작 (debug_hotkeys={list(debug_hotkeys.keys())})")
     for name, callback in callbacks.items():
         config = debug_hotkeys.get(name)
         if not config:
+            log.debug(f"  {name}: 설정 없음, 스킵")
             continue
 
         hotkey_str = _format_hotkey_for_keyboard(config)
@@ -276,7 +281,7 @@ def register_debug_hotkeys():
         _registered_hotkeys[name] = hotkey_str
 
         display_name = DEBUG_HOTKEY_NAMES.get(name, name)
-        print(f"  {hotkey_str.upper()}: {display_name}")
+        log.info(f"  {hotkey_str.upper()}: {display_name}")
 
 
 def unregister_debug_hotkeys():

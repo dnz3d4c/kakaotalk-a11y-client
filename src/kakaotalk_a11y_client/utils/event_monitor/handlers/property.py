@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ..config import EventMonitorConfig
 
 from ...debug import get_logger
-from ....window_finder import is_kakaotalk_window, is_kakaotalk_menu_window
+from ....window_finder import filter_kakaotalk_hwnd
 
 log = get_logger("EventMon_Prop")
 
@@ -115,6 +115,7 @@ PROPERTY_IDS = {
 # 모니터링할 주요 속성 ID
 DEFAULT_PROPERTY_IDS = [
     30005,  # Name
+    30008,  # HasKeyboardFocus - 포커스 변경 감지용
     30010,  # IsEnabled
     30022,  # IsOffscreen
     30026,  # ItemStatus
@@ -193,7 +194,6 @@ class PropertyHandler(BaseHandler):
                 None,  # cacheRequest
                 self._com_handler,
                 prop_array,
-                len(self._property_ids),
             )
 
             prop_names = [PROPERTY_IDS.get(p, str(p)) for p in self._property_ids]
@@ -226,24 +226,10 @@ class PropertyHandler(BaseHandler):
     def _on_property_event(self, sender, property_id: int, new_value) -> None:
         """PropertyChanged 이벤트 처리."""
         try:
-            import win32gui
-
             # 카카오톡 필터링
             if self._config.include_only_kakaotalk:
-                hwnd = sender.CurrentNativeWindowHandle
-                if hwnd:
-                    if not (
-                        is_kakaotalk_window(hwnd) or
-                        is_kakaotalk_menu_window(hwnd)
-                    ):
-                        return
-                else:
-                    fg_hwnd = win32gui.GetForegroundWindow()
-                    if not fg_hwnd or not (
-                        is_kakaotalk_window(fg_hwnd) or
-                        is_kakaotalk_menu_window(fg_hwnd)
-                    ):
-                        return
+                if not filter_kakaotalk_hwnd(sender):
+                    return
 
             # 속성 이름 조회
             property_name = PROPERTY_IDS.get(property_id, f"Unknown({property_id})")
@@ -258,6 +244,12 @@ class PropertyHandler(BaseHandler):
                 new_value_str = str(new_value) if new_value is not None else "(None)"
             except Exception:
                 new_value_str = "(conversion failed)"
+
+            # TRACE 로깅 (임시 - 테스트용)
+            log.trace(
+                f"[PropertyChanged] {property_name}={new_value_str} | "
+                f"{ctrl.ControlTypeName}: {ctrl.Name[:30] if ctrl.Name else '(no name)'}"
+            )
 
             # EventLog 생성
             event = EventLog(

@@ -3,7 +3,7 @@
 """프로젝트 메타 정보 - 저작권/버전 중앙 관리"""
 
 __title__ = "kakaotalk-a11y-client"
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 __author__ = "dnz3d4c"
 __license__ = "MIT"
 __copyright__ = "Copyright 2025-2026 dnz3d4c"

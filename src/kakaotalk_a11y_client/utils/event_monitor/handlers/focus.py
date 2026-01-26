@@ -17,31 +17,14 @@ if TYPE_CHECKING:
 # COM 인터페이스 import
 from ...uia_events import (
     HAS_COMTYPES,
-    COMObject,
-    IUIAutomationFocusChangedEventHandler,
+    FocusChangedHandler,
 )
 from ...debug import get_logger
-from ....window_finder import is_kakaotalk_window, is_kakaotalk_menu_window
+from ....window_finder import filter_kakaotalk_hwnd
 
 log = get_logger("EventMon_Focus")
 
-
-class _FocusChangedCOMHandler(COMObject):
-    """FocusChanged COM 콜백."""
-
-    if HAS_COMTYPES:
-        _com_interfaces_ = [IUIAutomationFocusChangedEventHandler]
-
-    def __init__(self, callback):
-        super().__init__()
-        self._callback = callback
-
-    def HandleFocusChangedEvent(self, sender):
-        if self._callback and sender:
-            try:
-                self._callback(sender)
-            except Exception:
-                pass
+# FocusChangedHandler는 uia_events.py에서 import (COM 콜백 통합)
 
 
 class FocusHandler(BaseHandler):
@@ -67,8 +50,9 @@ class FocusHandler(BaseHandler):
 
         try:
             self._uia = uia_client
-            self._com_handler = _FocusChangedCOMHandler(
-                callback=self._on_focus_event
+            self._com_handler = FocusChangedHandler(
+                callback=self._on_focus_event,
+                logger=log
             )
 
             self._uia.AddFocusChangedEventHandler(
@@ -101,23 +85,9 @@ class FocusHandler(BaseHandler):
     def _on_focus_event(self, sender) -> None:
         """카카오톡 창만 처리. compareElements로 중복 필터링."""
         try:
-            import win32gui
-
             # 카카오톡 필터링
             if self._config.include_only_kakaotalk:
-                hwnd = sender.CurrentNativeWindowHandle
-                if not hwnd:
-                    fg_hwnd = win32gui.GetForegroundWindow()
-                    if not fg_hwnd or not (
-                        is_kakaotalk_window(fg_hwnd) or
-                        is_kakaotalk_menu_window(fg_hwnd)
-                    ):
-                        return
-                    hwnd = fg_hwnd
-                elif not (
-                    is_kakaotalk_window(hwnd) or
-                    is_kakaotalk_menu_window(hwnd)
-                ):
+                if not filter_kakaotalk_hwnd(sender):
                     return
 
             # compareElements로 중복 필터링

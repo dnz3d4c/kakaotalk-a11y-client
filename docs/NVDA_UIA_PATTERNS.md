@@ -162,31 +162,26 @@ UIAEventIdsToNVDAEventNames = {
 
 ### 프로젝트 구현
 
-**HybridFocusMonitor** (`uia_events.py:58-256`)
-- 이벤트 기반 → 폴링 자동 폴백
-- 최대 3회 실패 후 폴링 전환
+**FocusMonitor** (`uia_events.py`)
+- 순수 이벤트 기반 (폴링 폴백 제거됨, 2026-01)
+- AddFocusChangedEventHandler 사용
 
-**MessageListMonitor** (`uia_events.py:369-668`)
+**MessageListMonitor** (`uia_events.py`)
 - StructureChanged 이벤트 직접 구현
 - COM 메시지 펌프 루프
 
-**pause/resume 패턴** (`uia_events.py:442-470`)
+**pause/resume 패턴**
 - 메뉴 열림 중 CPU 스파이크 방지
 - 이벤트 수신은 유지, 콜백만 무시
 
 ```python
-class HybridFocusMonitor:
-    def __init__(self, max_event_failures=3, prefer_events=True):
-        self._use_events = prefer_events
-        self._event_failure_count = 0
-
+class FocusMonitor:
+    """순수 이벤트 기반 포커스 모니터 (2026-01 리팩터링)"""
     def start(self, on_focus_changed):
-        if self._use_events:
-            success = self._start_event_based()
-            if not success:
-                self._use_events = False  # 폴링 폴백
-        if not self._use_events:
-            self._start_polling()
+        # AddFocusChangedEventHandler 등록
+        self._uia.AddFocusChangedEventHandler(
+            self._cache_request, self._handler
+        )
 ```
 
 ---
@@ -221,10 +216,9 @@ class UIACache:
             return entry.value
         return None
 
-# 글로벌 캐시 인스턴스
+# 글로벌 캐시 인스턴스 (2026-01 정리: 1개만 사용)
 message_list_cache = UIACache(default_ttl=1.0)
-menu_cache = UIACache(default_ttl=0.5)
-window_cache = UIACache(default_ttl=1.0)
+# menu_cache, window_cache는 제거됨 (불필요)
 ```
 
 ---
@@ -402,7 +396,7 @@ MAX_WINEVENTS_PER_THREAD = 10  # 스레드당 일반 이벤트 최대
 
 ### 프로젝트 적용
 
-- 이벤트 병합: ✅ 적용 (MessageListMonitor 200ms 디바운싱)
+- 이벤트 병합: ✅ 적용 (EventCoalescer 20ms 간격, 디바운싱 30ms)
 - 음성 취소: 미적용 → 빠른 포커스 전환 시 유용
 
 ---
@@ -443,25 +437,139 @@ def compare_elements(elem1, elem2) -> bool:
 
 ---
 
-## 10. 프로젝트 적용 현황
+## 10. FocusChanged 고급 패턴
+
+> 2026-01-25 NVDA 소스 분석 추가 (UIAHandler, NVDAObjects/UIA)
+
+### shouldAllowUIAFocusEvent
+
+**NVDA 소스:** `NVDAObjects/UIA/__init__.py:1579-1583`
+
+```python
+def _get_shouldAllowUIAFocusEvent(self):
+    """FocusChanged 이벤트 수용 여부 - HasKeyboardFocus 속성으로 실제 포커스 확인"""
+    try:
+        return bool(self._getUIACacheablePropertyValue(UIA_HasKeyboardFocusPropertyId))
+    except COMError:
+        return True  # 속성 조회 실패 시 허용
+```
+
+**핵심**: FocusChanged 이벤트 수신 후 `HasKeyboardFocus` 속성을 **조회**해서 실제 키보드 포커스 보유 여부 2차 검증. PropertyChanged 이벤트가 아님.
+
+**프로젝트 적용:**
+```python
+# uia_focus_handler.py:_on_focus_event()
+try:
+    if not sender.CurrentHasKeyboardFocus:
+        return  # 실제 포커스 아님
+except Exception:
+    pass
+```
+
+### shouldAllowDuplicateUIAFocusEvent
+
+**NVDA 소스:** `NVDAObjects/UIA/__init__.py:1140`
+
+```python
+shouldAllowDuplicateUIAFocusEvent = False  # 기본값: 중복 포커스 이벤트 차단
+```
+
+**용도**: 특정 컨트롤에서 중복 포커스 이벤트 허용 여부 제어. 기본적으로 `compareElements()` + 이 플래그로 중복 필터링.
+
+**프로젝트 현황:** RuntimeID 기반 중복 체크로 대체 (동일 효과)
+
+### addLocalEventHandlerGroupToElement
+
+**NVDA 소스:** `UIAHandler/__init__.py:673-715`
+
+```python
+def addLocalEventHandlerGroupToElement(self, element, isFocus=False):
+    """포커스된 요소에만 로컬 이벤트 핸들러 등록 (CPU 절약)"""
+    if isFocus:
+        # 등록 전 아직 포커스 상태인지 확인
+        isStillFocus = self.clientObject.CompareElements(
+            self.clientObject.GetFocusedElement(),
+            element,
+        )
+    # MTA 스레드 큐로 비동기 처리
+    self.MTAThreadQueue.put_nowait(func)
+```
+
+**동작:**
+- `event_gainFocus()` → `addLocalEventHandlerGroupToElement()` 호출
+- `event_loseFocus()` → `removeLocalEventHandlerGroupFromElement()` 호출
+- 포커스 요소에만 PropertyChanged 등 세부 이벤트 등록
+
+**프로젝트 현황:** 미적용 (글로벌 이벤트로 충분)
+
+### isNativeUIAElement
+
+**NVDA 소스:** `UIAHandler/__init__.py:1451+`
+
+```python
+def isNativeUIAElement(self, UIAElement):
+    """같은 프로세스의 UIA 요소는 제외 (freeze 방지)"""
+    try:
+        processID = UIAElement.cachedProcessId
+    except COMError:
+        return False
+    # 같은 프로세스면 False (크로스 프로세스 COM 마샬링 문제)
+```
+
+**용도**: 자체 프로세스 UIA 요소 접근 시 발생하는 데드락/프리즈 방지
+
+**프로젝트 현황:** Chrome_* 클래스 필터링으로 부분 대체
+
+### FakeEventHandlerGroup
+
+**NVDA 소스:** `UIAHandler/utils.py:276-336`
+
+```python
+class FakeEventHandlerGroup:
+    """IUIAutomation6 미지원 시 EventHandlerGroup API 에뮬레이션"""
+
+    def AddPropertyChangedEventHandler(self, scope, cacheRequest, handler, propertyArray, propertyCount):
+        properties = self.clientObject.IntNativeArrayToSafeArray(propertyArray, propertyCount)
+        self._propertyChangedEventHandlers[(scope, cacheRequest, properties)] = handler
+
+    def registerToClientObject(self, element):
+        for (scope, cacheRequest, properties), handler in self._propertyChangedEventHandlers.items():
+            self.clientObject.AddPropertyChangedEventHandler(element, scope, cacheRequest, handler, properties)
+```
+
+**용도**: Windows 10 1809 이전 버전에서 `CreateEventHandlerGroup()` API 부재 시 폴백
+
+**프로젝트 현황:** 미적용 (IUIAutomation6 직접 사용)
+
+---
+
+## 11. 프로젝트 적용 현황
 
 | 패턴 | NVDA | 프로젝트 | 상태 |
 |------|------|---------|------|
-| 에러 핸들링 | try-except | safe_uia_call | ✅ 적용 |
+| 에러 핸들링 | try-except | safe_uia_call + COMError 세분화 | ✅ 적용 |
 | TTL 캐싱 | 0.5초 | UIACache | ✅ 적용 |
 | UIA 신뢰도 | good/bad 클래스 | KAKAO_*_CLASSES | ✅ 적용 |
 | CacheRequest | 11+ 속성 | 4개 필수 | ✅ 더 효율적 |
-| 이벤트 핸들링 | 전역+로컬 | 폴링 중심 | ⚠️ 부분 |
+| 이벤트 핸들링 | 전역+로컬 | 이벤트 기반 (FocusMonitor) | ✅ 적용 |
 | Workaround | 이슈 번호 | KAKAO-00X | ✅ 적용 |
-| compareElements | ✅ 사용 | ControlsAreSame | ✅ 적용 |
-| 이벤트 병합 | OrderedWinEventLimiter | 200ms 디바운싱 | ✅ 적용 |
+| compareElements | ✅ 사용 | RuntimeID 비교 | ✅ 적용 |
+| 이벤트 병합 | OrderedWinEventLimiter | 20ms Condition 패턴 | ✅ 적용 |
 | TreeWalker | ✅ 사용 | searchDepth | ⚠️ 부분 |
 | MTA 아키텍처 | ✅ 단일 MTA | STA 다중 | ⚠️ 차이 |
+| **CoalesceEvents** | ✅ IUIAutomation6 | ✅ 적용 | 이벤트 병합 |
+| **ConnectionRecoveryBehavior** | ✅ IUIAutomation6 | ✅ 적용 | **신규 (2026-01-25)** |
+| **FocusChanged CacheRequest** | ✅ 속성 캐시 | ✅ 4개 속성 | **신규 (2026-01-25)** |
+| shouldAllowUIAFocusEvent | ✅ HasKeyboardFocus | ❌ 미적용 | 불필요 (RuntimeID로 충분) |
+| shouldAllowDuplicateUIAFocusEvent | ✅ 플래그 | RuntimeID 대체 | ✅ 동일 효과 |
+| addLocalEventHandlerGroupToElement | ✅ 동적 등록 | ❌ 미적용 | 불필요 |
+| isNativeUIAElement | ✅ 프로세스 체크 | Chrome_* 필터 | ⚠️ 부분 |
+| FakeEventHandlerGroup | ✅ IUIAutomation6 폴백 | ❌ 미적용 | 불필요 |
 
 ### 개선 우선순위
 
-1. **즉시**: ~~compareElements 도입~~, ~~COM 초기화 일관성~~ → ✅ 완료
-2. **중기**: FocusChanged 이벤트, ~~이벤트 병합~~ → 이벤트 병합 ✅ 완료
+1. **즉시**: ~~compareElements 도입~~, ~~COM 초기화 일관성~~, ~~ConnectionRecoveryBehavior~~, ~~CacheRequest~~ → ✅ 완료
+2. **중기**: ~~FocusChanged 이벤트~~, ~~이벤트 병합 Condition 패턴~~ → ✅ 완료
 3. **장기**: MTA 전환, TreeWalker 도입
 
 ---
