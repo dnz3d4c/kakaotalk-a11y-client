@@ -30,19 +30,28 @@ class KakaoA11yApp(wx.App):
     def _check_update_background(self) -> None:
         """4시간 간격 체크 후 업데이트 있으면 GUI 스레드에서 알림."""
         import threading
+        from ..utils.debug import get_logger
+
+        log = get_logger("App")
 
         def check():
             try:
                 from ..updater import check_for_update_if_needed, is_frozen
+
                 if not is_frozen():
+                    log.debug("auto update check skipped (not frozen)")
                     return
 
+                log.debug("auto update check started")
                 info = check_for_update_if_needed()
+
                 if info:
-                    # GUI 스레드에서 알림 표시
+                    log.info(f"auto update found: {info.version}")
                     wx.CallAfter(self._show_update_notification, info)
-            except Exception:
-                pass  # 조용히 실패
+                else:
+                    log.debug("auto update check completed (no update)")
+            except Exception as e:
+                log.warning(f"auto update check failed: {e}")
 
         thread = threading.Thread(target=check, daemon=True)
         thread.start()

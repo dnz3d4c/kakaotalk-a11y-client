@@ -6,17 +6,17 @@ import wx
 import wx.adv
 from typing import TYPE_CHECKING
 
+from ..utils.debug import get_logger
+
 if TYPE_CHECKING:
     from ..main import EmojiClicker
     from .main_frame import MainFrame
 
+log = get_logger("TrayIcon")
+
 
 class TrayIcon(wx.adv.TaskBarIcon):
     """시스템 트레이 아이콘. 더블클릭으로 설정, 우클릭 메뉴 제공."""
-
-    ID_SETTINGS = wx.NewIdRef()
-    ID_CHECK_UPDATE = wx.NewIdRef()
-    ID_EXIT = wx.NewIdRef()
 
     def __init__(self, frame: "MainFrame", clicker: "EmojiClicker"):
         super().__init__()
@@ -33,21 +33,22 @@ class TrayIcon(wx.adv.TaskBarIcon):
         self.SetIcon(icon, "카카오톡 접근성 클라이언트")
 
     def CreatePopupMenu(self) -> wx.Menu:
+        """우클릭 메뉴 생성. 메뉴에 직접 이벤트 바인딩."""
         menu = wx.Menu()
 
         # 설정
-        menu.Append(self.ID_SETTINGS, "설정(&S)...")
-        self.Bind(wx.EVT_MENU, self.on_settings, id=self.ID_SETTINGS)
+        item_settings = menu.Append(wx.ID_ANY, "설정(&S)...")
+        menu.Bind(wx.EVT_MENU, self.on_settings, item_settings)
 
         # 업데이트 확인
-        menu.Append(self.ID_CHECK_UPDATE, "업데이트 확인(&U)...")
-        self.Bind(wx.EVT_MENU, self.on_check_update, id=self.ID_CHECK_UPDATE)
+        item_update = menu.Append(wx.ID_ANY, "업데이트 확인(&U)...")
+        menu.Bind(wx.EVT_MENU, self.on_check_update, item_update)
 
         menu.AppendSeparator()
 
         # 종료
-        menu.Append(self.ID_EXIT, "종료(&X)")
-        self.Bind(wx.EVT_MENU, self.on_exit, id=self.ID_EXIT)
+        item_exit = menu.Append(wx.ID_ANY, "종료(&X)")
+        menu.Bind(wx.EVT_MENU, self.on_exit, item_exit)
 
         return menu
 
@@ -55,10 +56,18 @@ class TrayIcon(wx.adv.TaskBarIcon):
         self.frame.show_settings_dialog()
 
     def on_settings(self, event: wx.CommandEvent) -> None:
+        log.debug("settings menu clicked")
         self.frame.show_settings_dialog()
 
     def on_check_update(self, event: wx.CommandEvent) -> None:
-        self.frame.check_for_update(manual=True)
+        log.debug("check update menu clicked")
+        try:
+            self.frame.check_for_update(manual=True)
+        except Exception as e:
+            import traceback
+            log.error(f"check_for_update exception: {e}\n{traceback.format_exc()}")
+            wx.MessageBox(f"업데이트 확인 실패:\n{e}", "오류", wx.OK | wx.ICON_ERROR)
 
     def on_exit(self, event: wx.CommandEvent) -> None:
+        log.debug("exit menu clicked")
         self.frame.Close(force=True)

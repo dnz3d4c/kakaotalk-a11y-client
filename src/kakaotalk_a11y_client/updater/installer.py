@@ -69,39 +69,65 @@ def get_install_dir() -> Optional[Path]:
 
 def generate_batch_script(source_dir: Path, install_dir: Path, pid: int) -> str:
     """프로세스 종료 대기 -> 파일 복사 -> 재시작 batch 스크립트."""
+    log_file = TEMP_DIR / "update_log.txt"
     return f"""@echo off
 chcp 65001 > nul
-echo 업데이트 적용 중...
+set LOGFILE="{log_file}"
+
+:: 로그 함수
+call :log "=== 업데이트 시작 ==="
+call :log "PID: {pid}"
+call :log "소스: {source_dir}"
+call :log "대상: {install_dir}"
 
 :: 1. 기존 프로세스 종료 대기
+call :log "1단계: 프로세스 종료 대기"
+set /a WAIT_COUNT=0
 :wait_loop
 tasklist /FI "PID eq {pid}" 2>NUL | find /I "{pid}" >NUL
 if not errorlevel 1 (
-    echo 프로세스 종료 대기 중...
+    set /a WAIT_COUNT+=1
+    if %WAIT_COUNT% GEQ 30 (
+        call :log "ERROR: 프로세스 종료 대기 타임아웃 (30초)"
+        pause
+        exit /b 1
+    )
     timeout /t 1 /nobreak >NUL
     goto wait_loop
 )
+call :log "1단계 완료: 프로세스 종료됨"
 
-:: 2. 파일 복사
-echo 파일 복사 중...
-xcopy /E /Y /Q "{source_dir}\\*" "{install_dir}\\"
-if errorlevel 1 (
-    echo 파일 복사 실패
+:: 2. 파일 복사 (robocopy 사용 - xcopy보다 안정적)
+call :log "2단계: 파일 복사 시작"
+robocopy "{source_dir}" "{install_dir}" /E /NFL /NDL /NJH /NJS /R:3 /W:1 > nul 2>&1
+set ROBO_EXIT=%errorlevel%
+:: robocopy 종료 코드: 0-7은 성공, 8 이상은 실패
+if %ROBO_EXIT% GEQ 8 (
+    call :log "ERROR: 파일 복사 실패 (robocopy exit=%ROBO_EXIT%)"
     pause
     exit /b 1
 )
+call :log "2단계 완료: 파일 복사 성공 (robocopy exit=%ROBO_EXIT%)"
 
-:: 3. 임시 파일 정리
-echo 임시 파일 정리 중...
-rd /S /Q "{TEMP_DIR}"
-rd /S /Q "{EXTRACT_DIR}"
-
-:: 4. 새 버전 실행
-echo 새 버전 시작...
+:: 3. 새 버전 실행
+call :log "3단계: 새 버전 실행"
 start "" "{install_dir}\\KakaotalkA11y.exe"
+:: start 명령은 errorlevel을 변경 안 함 - 프로세스 시작 여부만 확인
+call :log "3단계 완료: 새 버전 실행 요청됨"
+
+:: 4. 임시 파일 정리 (로그 파일 제외)
+call :log "4단계: 임시 파일 정리"
+rd /S /Q "{EXTRACT_DIR}" 2>nul
+call :log "=== 업데이트 완료 ==="
 
 :: 5. 자기 자신 삭제
 del "%~f0"
+exit /b 0
+
+:log
+echo %date% %time% %~1 >> %LOGFILE%
+echo %~1
+goto :eof
 """
 
 
@@ -112,7 +138,12 @@ def apply_update(extracted_dir: Path) -> bool:
         log.error("cannot update in development environment")
         return False
 
+    log.debug(f"apply_update: source={extracted_dir}, target={install_dir}")
+
     try:
+        # 임시 폴더 생성
+        TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
         # batch 스크립트 생성
         bat_path = TEMP_DIR / "update.bat"
         bat_content = generate_batch_script(
@@ -122,11 +153,18 @@ def apply_update(extracted_dir: Path) -> bool:
         )
         bat_path.write_text(bat_content, encoding="cp949")
 
-        log.info(f"update script created: {bat_path}")
+        # 파일 생성 확인
+        if not bat_path.exists():
+            log.error(f"batch script not created: {bat_path}")
+            return False
+
+        log.info(f"update script created: {bat_path} ({bat_path.stat().st_size} bytes)")
 
         # batch 실행 (분리된 프로세스)
         # start 명령어로 새 콘솔에서 실행
-        os.system(f'start "Updater" cmd /c "{bat_path}"')
+        ret = os.system(f'start "Updater" cmd /c "{bat_path}"')
+        if ret != 0:
+            log.warning(f"os.system returned {ret}, but batch may still run")
 
         log.info("update script executed")
         return True

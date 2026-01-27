@@ -52,8 +52,8 @@ a = Analysis(
         'tkinter', '_tkinter', 'tcl', 'tk',
         # 테스트/문서 모듈
         'unittest', 'test', 'pydoc', 'doctest',
-        # 네트워크 (미사용) - email은 pywin32 의존성으로 필요
-        'html', 'http', 'xmlrpc', 'ftplib',
+        # 네트워크 - email은 pywin32 의존성으로 필요, http는 updater에서 사용
+        'html', 'xmlrpc', 'ftplib',
         # 데이터베이스 (미사용)
         'sqlite3',
         # 기타 미사용

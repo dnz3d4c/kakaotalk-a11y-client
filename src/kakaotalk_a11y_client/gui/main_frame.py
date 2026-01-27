@@ -51,32 +51,44 @@ class MainFrame(wx.Frame):
     def check_for_update(self, manual: bool = False) -> None:
         """업데이트 확인. HTTP 요청을 별도 스레드에서 수행."""
         from ..utils.debug import get_logger
-
         log = get_logger("MainFrame")
+        log.debug(f"check_for_update called (manual={manual})")
+
+        try:
+            from ..updater import check_for_update as do_check, is_frozen
+        except Exception as e:
+            import traceback
+            log.error(f"updater import failed: {e}\n{traceback.format_exc()}")
+            if manual:
+                wx.MessageBox(f"업데이트 모듈 로딩 실패:\n{e}", "오류", wx.OK | wx.ICON_ERROR)
+            return
 
         # 수동 확인 시 바쁨 커서 표시
         if manual:
             wx.BeginBusyCursor()
 
         def check_background():
-            from ..updater import check_for_update as do_check
-
-            log.debug("update check started")
+            nonlocal log
+            log.debug("check_background thread started")
+            info = None
+            error = None
             try:
+                frozen = is_frozen()
+                log.debug(f"is_frozen={frozen}")
                 info = do_check()
-                error = None
+                log.debug(f"check_for_update result: {info}")
             except Exception as e:
-                log.error(f"update check failed: {e}")
-                info = None
+                import traceback
+                log.error(f"update check failed: {e}\n{traceback.format_exc()}")
                 error = str(e)
             finally:
                 if manual:
                     wx.CallAfter(wx.EndBusyCursor)
-
-            wx.CallAfter(self._on_update_check_complete, info, manual, error)
+                wx.CallAfter(self._on_update_check_complete, info, manual, error)
 
         thread = threading.Thread(target=check_background, daemon=True)
         thread.start()
+        log.debug("check_background thread launched")
 
     def _on_update_check_complete(
         self, info, manual: bool, error: str = None
@@ -86,6 +98,7 @@ class MainFrame(wx.Frame):
         from .update_dialogs import run_update_flow, show_update_available
 
         log = get_logger("MainFrame")
+        log.debug(f"_on_update_check_complete called: info={info}, error={error}")
 
         # 오류 발생 시
         if error:

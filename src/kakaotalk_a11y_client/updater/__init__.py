@@ -50,19 +50,26 @@ def is_frozen() -> bool:
 
 def check_for_update() -> Optional[UpdateInfo]:
     """새 버전 있으면 UpdateInfo 반환."""
+    log.debug(f"checking for update (current version: {__version__})")
+
     release = get_latest_release()
     if not release:
+        log.debug("failed to get latest release from GitHub")
         return None
 
     tag = release.get("tag_name", "")
+    log.debug(f"latest release: {tag}")
+
     if not is_newer(tag, __version__):
         log.debug(f"already on latest version: {__version__}")
         return None
 
     download_url = find_asset_url(release)
     if not download_url:
+        log.warning("no matching asset found in release")
         return None
 
+    log.info(f"update available: {tag} (current: {__version__})")
     return UpdateInfo(
         version=tag.lstrip("v"),
         current_version=__version__,
