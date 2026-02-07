@@ -556,7 +556,7 @@ class FakeEventHandlerGroup:
 | compareElements | ✅ 사용 | RuntimeID 비교 | ✅ 적용 |
 | 이벤트 병합 | OrderedWinEventLimiter | 20ms Condition 패턴 | ✅ 적용 |
 | TreeWalker | ✅ 사용 | searchDepth | ⚠️ 부분 |
-| MTA 아키텍처 | ✅ 단일 MTA | STA 다중 | ⚠️ 차이 |
+| MTA 아키텍처 | ✅ 단일 MTA | STA 다중 | ✅ 의도적 차이 (조사 완료: MTA 전환 불필요) |
 | **CoalesceEvents** | ✅ IUIAutomation6 | ✅ 적용 | 이벤트 병합 |
 | **ConnectionRecoveryBehavior** | ✅ IUIAutomation6 | ✅ 적용 | **신규 (2026-01-25)** |
 | **FocusChanged CacheRequest** | ✅ 속성 캐시 | ✅ 4개 속성 | **신규 (2026-01-25)** |
@@ -570,7 +570,219 @@ class FakeEventHandlerGroup:
 
 1. **즉시**: ~~compareElements 도입~~, ~~COM 초기화 일관성~~, ~~ConnectionRecoveryBehavior~~, ~~CacheRequest~~ → ✅ 완료
 2. **중기**: ~~FocusChanged 이벤트~~, ~~이벤트 병합 Condition 패턴~~ → ✅ 완료
-3. **장기**: MTA 전환, TreeWalker 도입
+3. **장기**: ~~MTA 전환~~ (조사 완료: 현재 STA 다중 스레드가 더 적합. 각 이벤트 스레드가 독립 STA로 안정적, 스레드 간 COM 객체 교환 없음), TreeWalker 도입
+
+---
+
+## 12. 적용 가능한 appModules 패턴
+
+> NVDA appModules에서 추출한 패턴 중 kakaotalk-a11y에 적용 가능한 기법.
+> 상세 레퍼런스: [C:/project/a11yDocs/NVDA_Addon_개발_가이드.md](file:///C:/project/a11yDocs/NVDA_Addon_%EA%B0%9C%EB%B0%9C_%EA%B0%80%EC%9D%B4%EB%93%9C.md)
+
+### 12.1 event_NVDAObject_init: 이름 정규화
+
+**NVDA 패턴** (`appModules/v2rayN.py`)
+
+객체 초기화 시점에 Name 속성을 정규화. 읽기 전에 전처리하여 일관된 형식으로 출력.
+
+```python
+def event_NVDAObject_init(self, obj):
+    if obj.role == controlTypes.Role.LISTITEM:
+        # 특정 패턴 변환
+        obj.name = self.normalize_name(obj.name)
+```
+
+**kakaotalk-a11y 적용 예시**: 광고 항목 이름 정규화
+
+```python
+# 현재: "(광고)" 텍스트가 ListItem Name 끝에 포함
+# 적용 후: 광고임을 먼저 알려줌 (스크린리더 사용성)
+
+def normalize_ad_name(name: str) -> str:
+    """광고 항목 이름 정규화 - 접두사로 광고 표시"""
+    if "(광고)" in name:
+        return f"[광고] {name.replace('(광고)', '').strip()}"
+    return name
+
+# 예시 변환:
+# "선물하기 (광고)" → "[광고] 선물하기"
+# "컬리 (광고)" → "[광고] 컬리"
+```
+
+**적용 위치**: `focus_monitor.py` `_speak_item()` 메서드
+
+---
+
+### 12.2 Overlay Class: 메시지 유형별 커스텀 읽기
+
+**NVDA 패턴** (`NVDAObjects/UIA/__init__.py`)
+
+ControlType별로 오버레이 클래스를 삽입하여 동작 커스터마이징.
+
+```python
+@classmethod
+def findOverlayClasses(cls, obj, clsList):
+    UIAControlType = obj.UIAElement.cachedControlType
+    if UIAControlType == UIA_ListItemControlTypeId:
+        clsList.insert(0, CustomListItem)
+```
+
+**kakaotalk-a11y 적용 예시**: 메시지 유형별 접두사 추가
+
+```python
+# 현재: 모든 메시지를 동일하게 Name 그대로 읽음
+# 적용 후: 유형별 접두사로 메시지 유형 먼저 안내
+
+MESSAGE_TYPE_MARKERS = {
+    "[사진]": "[사진 메시지]",
+    "[이모티콘]": "[이모티콘]",
+    "[스티커]": "[스티커]",
+    "[파일]": "[파일 공유]",
+    "[음성]": "[음성 메시지]",
+}
+
+def wrap_message_by_type(text: str) -> str:
+    """메시지 유형 감지 + 접두사 포장"""
+    for marker, prefix in MESSAGE_TYPE_MARKERS.items():
+        if marker in text:
+            return prefix + " " + text.replace(marker, "").strip()
+    return text
+
+# 예시 변환:
+# "[사진] 홍길동, 오후 2:30" → "[사진 메시지] 홍길동, 오후 2:30"
+# "[이모티콘] 하트, 홍길동" → "[이모티콘] 하트, 홍길동"
+```
+
+**적용 위치**: `focus_monitor.py` `_speak_item()` 메서드
+
+---
+
+### 12.3 증분 알림: lync.py 패턴
+
+**NVDA 패턴** (`appModules/lync.py`)
+
+채팅 창에서 전체 텍스트 대신 새로 추가된 부분만 읽기.
+
+```python
+# lync.py 핵심 로직
+def event_liveRegionChange(self, obj, nextHandler):
+    text = obj.name
+    # 정규식으로 새 메시지 부분만 추출
+    match = re.search(r"새 메시지: (.+)", text)
+    if match:
+        ui.message(match.group(1))
+    else:
+        nextHandler()
+```
+
+**kakaotalk-a11y 적용 예시**: 메시지 목록 증분 읽기
+
+```python
+# 현재: 새 메시지 도착 시 전체 메시지 또는 마지막 메시지 읽기
+# 적용 후: 이전 상태 대비 새로 추가된 메시지만 읽기
+
+class IncrementalMessageReader:
+    """증분 메시지 읽기 - 이전 상태 대비 새 메시지만 추출"""
+    _last_lines: list[str] = []
+
+    @classmethod
+    def get_new_content(cls, full_text: str) -> str:
+        lines = full_text.split("\n")
+        if len(lines) > len(cls._last_lines):
+            new_lines = lines[len(cls._last_lines):]
+            cls._last_lines = lines
+            return "\n".join(new_lines)
+        cls._last_lines = lines
+        return full_text  # 전체가 바뀐 경우
+
+# 예시:
+# 이전: ["안녕", "반가워"]
+# 현재: ["안녕", "반가워", "뭐해?"]
+# 결과: "뭐해?" (새 메시지만)
+```
+
+**적용 위치**: `navigation/message_monitor.py`
+
+---
+
+### 12.4 W10/11 레퍼런스 모듈
+
+> `C:/project/nvda/nvda/source/appModules/` 기준
+
+| 모듈 | 핵심 패턴 | 학습 포인트 |
+|------|----------|------------|
+| **explorer.py** | Overlay 9개 + isGoodUIAWindow | W11 Shell 요소 감지, 버전별 분기 |
+| **calculator.py** | event_nameChange + 캐시 | UIA 알림 필터링, 중복 방지 |
+| **notepad.py** | event_UIA_elementSelected | W11 Notepad 탭 전환 감지 |
+| **lync.py** | 라이브 리전 + 정규식 | 채팅 메시지 파싱, 증분 알림 |
+| **foobar2000.py** | Gesture + NamedTuple | 상태 표시줄 파싱, 시간 형식 |
+| **excel.py** | focusRedirect + 재시도 | CellEdit 찾기, 이벤트 계류 체크 |
+| **devenv.py** | COM 자동화 + TextInfo | Visual Studio DTE, 스레드 캐싱 |
+| **eclipse.py** | 자동완성 + 이벤트 무시 | 깊은 포커스 계층 탐색 |
+| **kindle.py** | IA2Attributes + 페이지 턴 | 하이퍼텍스트 재귀 탐색 |
+| **logonui.py** | 포커스 리다이렉트 | 로그인 화면, 버전별 윈도우 클래스 |
+
+---
+
+## 13. standalone vs NVDA 메커니즘 비교 (2026-02 심층 분석)
+
+> kakaotalk-accessible-nvda 62줄 vs standalone 10,923줄 비교에서 도출된 분석.
+> 3가지 핵심 패턴의 메커니즘 차이를 문서화.
+
+### 13.1 shouldAllowUIAFocusEvent vs HasKeyboardFocus 미체크
+
+**NVDA 메커니즘**:
+- `UIAHandler/__init__.py:912`에서 `obj.shouldAllowUIAFocusEvent` 체크
+- 기본 구현(`NVDAObjects/UIA/__init__.py:1579-1583`): `HasKeyboardFocus` UIA 속성 조회
+- False면 포커스 이벤트 드롭 (항목을 읽지 않음)
+- 카카오톡 메뉴 항목은 `HasKeyboardFocus=False` → NVDA 기본으로는 못 읽음
+- 애드온이 `shouldAllowUIAFocusEvent = True`로 게이트 우회
+
+**standalone 메커니즘**:
+- HasKeyboardFocus 체크 자체가 파이프라인에 없음
+- 모든 FocusChanged 이벤트를 hwnd 필터 → RuntimeID 중복 → Chrome_* 필터만 통과시킴
+- 게이트가 없으니 우회도 필요 없음
+
+**차이점**: 기능적으로 동등하나 메커니즘이 다름. NVDA는 선택적 우회(요소 타입별), standalone은 무조건 수용. standalone에서 카카오톡 내부 거짓 포커스 이벤트가 발생하면 필터링 못 함. 현재까지 관찰된 문제 없음.
+
+---
+
+### 13.2 isGoodUIAWindow → True vs EVA_* 접두사 인식
+
+**NVDA 메커니즘**:
+- `isGoodUIAWindow(hwnd) → True` — kakaotalk.exe의 **모든** 윈도우에 무조건 UIA
+- 새 윈도우 클래스 자동 커버
+
+**standalone 메커니즘 (2026-02 개선)**:
+- `is_kakaotalk_window()`: EVA_* 접두사 기반 인식
+- Chrome_* 명시적 제외
+- 기능적으로 NVDA와 동등해짐
+
+**이전 한계**: EVA_Window_Dblclk, EVA_Menu 2개 클래스만 하드코딩 → 새 클래스 추가 시 코드 수정 필요했음 (EVA_Menu 추가할 때 겪은 문제). 접두사 기반으로 변경하여 해결.
+
+---
+
+### 13.3 _get_states SELECTED→FOCUSED 트릭
+
+**NVDA 메커니즘**:
+- `KakaoListItem._get_states()`: SELECTED 상태 있으면 FOCUSED 추가
+- 영향 범위: speech output 정확성 (`processAndLabelStates`에서 상태 발화 결정)
+- `shouldAllowUIAFocusEvent`, `hasFocus`, `doPreGainFocus`에는 영향 없음
+- 진짜 focus 관리는 `event_UIA_elementSelected → queueEvent("gainFocus")`가 담당
+
+**standalone 메커니즘**:
+- UIA 상태(states) 자체를 사용하지 않음
+- Name과 RuntimeId만으로 중복 감지 및 발화
+- "선택됨"/"선택 해제됨" 상태 정보 발화 없음
+
+**사용자가 NVDA에서 느끼는 "더 나은 포커스 관리"의 실제 원인**:
+
+_get_states 트릭 자체보다, gainFocus 파이프라인의 풍부함이 핵심:
+- `focusEntered`: 새 컨테이너 진입 시 "목록" 같은 컨텍스트 발화
+- `cancelSpeech`: 빠른 탐색 시 이전 발화 자동 취소
+- braille/navigator 동기화
+
+standalone이 이 차이를 줄이려면 gainFocus 파이프라인 구현이 필요하나, 대규모 아키텍처 변경으로 현재 범위 밖.
 
 ---
 

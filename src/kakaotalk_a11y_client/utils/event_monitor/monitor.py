@@ -15,7 +15,7 @@ from .formatters import ConsoleFormatter, JsonFormatter, TableFormatter
 from ..uia_events import HAS_COMTYPES, _create_uia_client
 from ..debug import get_logger
 from ..com_utils import com_thread
-from ...config import TIMING_EVENT_PUMP_INTERVAL
+from ...config import TIMING_EVENT_PUMP_INTERVAL, TIMING_THREAD_JOIN_TIMEOUT
 
 log = get_logger("EventMonitor")
 
@@ -85,7 +85,7 @@ class EventMonitor:
         self._running = False
 
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=TIMING_THREAD_JOIN_TIMEOUT)
 
         log.info("EventMonitor stopped")
 

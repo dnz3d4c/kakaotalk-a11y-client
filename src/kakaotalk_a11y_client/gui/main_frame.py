@@ -7,6 +7,8 @@ import threading
 import wx
 from typing import TYPE_CHECKING
 
+from ..config import APP_DISPLAY_NAME
+
 if TYPE_CHECKING:
     from ..main import EmojiClicker
 
@@ -17,7 +19,7 @@ class MainFrame(wx.Frame):
     def __init__(self, clicker: "EmojiClicker"):
         super().__init__(
             parent=None,
-            title="카카오톡 접근성 클라이언트",
+            title=APP_DISPLAY_NAME,
             style=wx.FRAME_NO_TASKBAR,  # 작업표시줄 미표시
         )
         self.clicker = clicker

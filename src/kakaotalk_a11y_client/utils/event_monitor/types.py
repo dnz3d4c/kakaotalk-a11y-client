@@ -58,15 +58,11 @@ DEBUG_DEFAULT_EVENTS = frozenset({
     EventType.STRUCTURE,
 })
 
-# --trace 모드 기본 이벤트 (전체 추적)
+# --trace 모드 기본 이벤트 (--debug와 동일, PROPERTY/MENU_*는 미작동이므로 제외)
+# 명시적 --debug-events=all 또는 --debug-events=property 로 활성화 가능
 TRACE_DEFAULT_EVENTS = frozenset({
     EventType.FOCUS,
     EventType.STRUCTURE,
-    EventType.PROPERTY,
-    EventType.MENU_OPENED,
-    EventType.MENU_CLOSED,
-    EventType.MENU_MODE_START,
-    EventType.MENU_MODE_END,
 })
 
 # 모든 이벤트

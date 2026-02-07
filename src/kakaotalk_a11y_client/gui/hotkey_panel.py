@@ -4,13 +4,15 @@
 
 스크린 리더 친화적인 핫키 설정 UI.
 ListCtrl + 컨텍스트 메뉴 방식.
+데이터 기반 일반화: 일반/디버그 핫키 모두 이 클래스로 처리.
 """
 
+import copy
 import wx
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from ..accessibility import speak
-from ..settings import get_settings, HOTKEY_NAMES, DEFAULT_SETTINGS
+from ..settings import get_settings, DEFAULT_SETTINGS
 
 # hotkey_dialog에서 import + re-export
 from .hotkey_dialog import (
@@ -32,18 +34,45 @@ __all__ = [
 
 
 class HotkeyPanel(wx.Panel):
-    """핫키 설정 패널. 우클릭/Enter로 변경, Delete로 기본값 복원."""
+    """핫키 설정 패널. 우클릭/Enter로 변경, Delete로 기본값 복원.
+
+    hotkey_names, name_map 등 파라미터로 일반/디버그 핫키 모두 지원.
+    """
 
     # 컨텍스트 메뉴 ID
     ID_CHANGE = wx.NewIdRef()
     ID_RESTORE = wx.NewIdRef()
 
-    def __init__(self, parent: wx.Window, clicker: "EmojiClicker"):
+    def __init__(
+        self,
+        parent: wx.Window,
+        clicker: "EmojiClicker",
+        *,
+        hotkey_names: list[str],
+        name_map: dict[str, str],
+        settings_getter: Callable[[], dict],
+        settings_item_getter: Callable[[str], Optional[dict]],
+        settings_setter: Callable[[str, list, str], None],
+        default_key: str,
+        section_label: str = "단축키 설정",
+        help_text: str = "단축키를 선택하고 우클릭하여 변경할 수 있습니다.",
+        first_col_width: int = 150,
+        on_apply_callback: Optional[Callable[[], None]] = None,
+    ):
         super().__init__(parent)
         self.clicker = clicker
         self.settings = get_settings()
         self._pending_changes: dict = {}
-        self._hotkey_names = ["scan", "exit"]
+        self._hotkey_names = hotkey_names
+        self._name_map = name_map
+        self._settings_getter = settings_getter
+        self._settings_item_getter = settings_item_getter
+        self._settings_setter = settings_setter
+        self._default_key = default_key
+        self._section_label = section_label
+        self._help_text = help_text
+        self._first_col_width = first_col_width
+        self._on_apply_callback = on_apply_callback
 
         self._create_ui()
 
@@ -51,14 +80,11 @@ class HotkeyPanel(wx.Panel):
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # 핫키 설정 섹션
-        hotkey_box = wx.StaticBox(self, label="단축키 설정")
+        hotkey_box = wx.StaticBox(self, label=self._section_label)
         hotkey_sizer = wx.StaticBoxSizer(hotkey_box, wx.VERTICAL)
 
         # 안내 텍스트
-        help_text = wx.StaticText(
-            self,
-            label="단축키를 선택하고 우클릭하여 변경할 수 있습니다."
-        )
+        help_text = wx.StaticText(self, label=self._help_text)
         hotkey_sizer.Add(help_text, 0, wx.ALL, 8)
 
         # ListCtrl
@@ -66,7 +92,7 @@ class HotkeyPanel(wx.Panel):
             self,
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.BORDER_SUNKEN
         )
-        self.list_ctrl.InsertColumn(0, "기능", width=150)
+        self.list_ctrl.InsertColumn(0, "기능", width=self._first_col_width)
         self.list_ctrl.InsertColumn(1, "단축키", width=150)
 
         # 핫키 데이터 로드
@@ -100,7 +126,7 @@ class HotkeyPanel(wx.Panel):
     def _load_hotkeys(self) -> None:
         """ListCtrl에 핫키 데이터 표시. _pending_changes 우선 반영."""
         self.list_ctrl.DeleteAllItems()
-        hotkeys = self.settings.get_all_hotkeys()
+        hotkeys = self._settings_getter()
 
         for i, name in enumerate(self._hotkey_names):
             # pending 변경사항 우선
@@ -109,8 +135,8 @@ class HotkeyPanel(wx.Panel):
             else:
                 config = hotkeys.get(name, {})
 
-            display_name = HOTKEY_NAMES.get(name, name)
-            hotkey_str = format_hotkey(config)
+            display_name = self._name_map.get(name, name)
+            hotkey_str = format_hotkey(config) if config else "(미설정)"
 
             self.list_ctrl.InsertItem(i, display_name)
             self.list_ctrl.SetItem(i, 1, hotkey_str)
@@ -154,13 +180,13 @@ class HotkeyPanel(wx.Panel):
         if not hotkey_name:
             return
 
-        display_name = HOTKEY_NAMES.get(hotkey_name, hotkey_name)
+        display_name = self._name_map.get(hotkey_name, hotkey_name)
 
         # 현재 설정 (pending 우선)
         if hotkey_name in self._pending_changes:
             current_config = self._pending_changes[hotkey_name]
         else:
-            current_config = self.settings.get_hotkey(hotkey_name) or {}
+            current_config = self._settings_item_getter(hotkey_name) or {}
 
         # 변경 다이얼로그
         dlg = HotkeyChangeDialog(self, hotkey_name, display_name, current_config)
@@ -170,7 +196,6 @@ class HotkeyPanel(wx.Panel):
             if new_config:
                 self._pending_changes[hotkey_name] = new_config
                 self._load_hotkeys()
-
                 speak(f"{display_name} 단축키 변경됨. 저장 필요.")
 
         dlg.Destroy()
@@ -192,9 +217,9 @@ class HotkeyPanel(wx.Panel):
 
     def _restore_hotkey(self, hotkey_name: str) -> None:
         """확인 후 기본값을 _pending_changes에 저장."""
-        display_name = HOTKEY_NAMES.get(hotkey_name, hotkey_name)
-        default_config = DEFAULT_SETTINGS["hotkeys"].get(hotkey_name, {})
-        default_str = format_hotkey(default_config)
+        display_name = self._name_map.get(hotkey_name, hotkey_name)
+        default_config = DEFAULT_SETTINGS[self._default_key].get(hotkey_name, {})
+        default_str = format_hotkey(default_config) if default_config else "(없음)"
 
         dlg = wx.MessageDialog(
             self,
@@ -204,9 +229,8 @@ class HotkeyPanel(wx.Panel):
         )
 
         if dlg.ShowModal() == wx.ID_YES:
-            self._pending_changes[hotkey_name] = default_config.copy()
+            self._pending_changes[hotkey_name] = copy.deepcopy(default_config)
             self._load_hotkeys()
-
             speak(f"{display_name} 기본값으로 복원됨. 저장 필요.")
 
         dlg.Destroy()
@@ -221,11 +245,10 @@ class HotkeyPanel(wx.Panel):
 
         if dlg.ShowModal() == wx.ID_YES:
             for name in self._hotkey_names:
-                config = DEFAULT_SETTINGS["hotkeys"].get(name, {})
-                self._pending_changes[name] = config.copy()
+                config = DEFAULT_SETTINGS[self._default_key].get(name, {})
+                self._pending_changes[name] = copy.deepcopy(config)
 
             self._load_hotkeys()
-
             speak("모든 단축키 기본값으로 복원됨. 저장 필요.")
 
         dlg.Destroy()
@@ -236,10 +259,18 @@ class HotkeyPanel(wx.Panel):
             return True
 
         for name, config in self._pending_changes.items():
-            self.settings.set_hotkey(name, config["modifiers"], config["key"])
+            self._settings_setter(name, config["modifiers"], config["key"])
 
         self._pending_changes.clear()
-        return self.settings.save()
+
+        if not self.settings.save():
+            return False
+
+        # 추가 콜백 (디버그 핫키 재등록 등)
+        if self._on_apply_callback:
+            self._on_apply_callback()
+
+        return True
 
     def has_changes(self) -> bool:
         return bool(self._pending_changes)

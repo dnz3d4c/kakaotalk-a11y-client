@@ -3,6 +3,7 @@
 """디버그 도구 통합 관리. 에러/느린 작업 발생 시 자동 덤프."""
 
 import json
+import time
 import traceback
 from contextlib import contextmanager
 from datetime import datetime
@@ -27,6 +28,8 @@ class DebugToolManager:
         self._session_start = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self._dump_count = 0
         self._issues: list[dict] = []
+        self._last_dump_times: dict[str, float] = {}
+        self._cleanup_done = False
 
     @contextmanager
     def debug_operation(
@@ -110,6 +113,18 @@ class DebugToolManager:
         return dump_path
 
     def _auto_dump(self, trigger: str, context: dict):
+        if not self._cleanup_done:
+            self._cleanup_done = True
+            self.cleanup_old_dumps()
+
+        # 쿨다운 체크
+        now = time.monotonic()
+        cooldown = debug_config.dump_cooldown_seconds
+        last_time = self._last_dump_times.get(trigger, 0)
+        if now - last_time < cooldown:
+            return
+        self._last_dump_times[trigger] = now
+
         try:
             timestamp = datetime.now().strftime('%H%M%S')
             filename = f'auto_{trigger}_{timestamp}'
@@ -139,6 +154,26 @@ class DebugToolManager:
             print("[DEBUG] 자동 덤프 실패: 카카오톡 창 없음")
         except Exception as e:
             print(f"[DEBUG] 자동 덤프 실패: {e}")
+
+    def cleanup_old_dumps(self):
+        """오래된 auto_* 덤프 파일 정리."""
+        try:
+            output_dir = debug_config.debug_output_dir
+            if not output_dir.exists():
+                return
+
+            dump_files = sorted(
+                output_dir.glob('auto_*'),
+                key=lambda p: p.stat().st_mtime
+            )
+            max_files = debug_config.max_dump_files * 2
+            if len(dump_files) > max_files:
+                to_delete = dump_files[:-max_files]
+                for f in to_delete:
+                    f.unlink()
+                print(f"[DEBUG] 오래된 덤프 {len(to_delete)}개 삭제")
+        except Exception:
+            pass
 
     def dump_on_condition(
         self,

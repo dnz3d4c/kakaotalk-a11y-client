@@ -6,6 +6,42 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-02-07
+
+포커스 모니터링 고도화, 메시지 액션 시스템 추가, 코드 정리 대규모 리팩터링.
+
+### Added
+- C키 메시지 복사 기능 (message_actions 패키지)
+- ElementSelected 이벤트 리스너로 포커스 추적 강화
+- --debug 시 이벤트 모니터 자동 시작
+- 커밋 후 릴리즈 체크 자동화 훅
+
+### Improved
+- EVA_* 접두사 기반 카카오톡 창 인식 (NVDA isGoodUIAWindow 패턴)
+- hwnd 판별 캐시로 이벤트 필터링 최적화
+- 컨테이너 포커스 이벤트 필터링 (ListControl, MenuControl)
+- 공유 캐시 락 추가 및 스레드 안전성 개선
+- 덤프 파일 자동 정리 및 중복 방지
+- 메시지 리스트 존재 확인 타임아웃 축소 및 빈 리스트 오탐 수정
+- 복사 피드백 메시지 명확화
+
+### Changed
+- 포커스 이벤트 디스패치를 테이블 기반으로 전환
+- 싱글톤 패턴 통일
+- HotkeyPanel 데이터 기반 일반화 (DebugHotkeyPanel 삭제)
+- 하드코딩된 상수 config.py로 통합
+- 디버그 초기화 로직 debug_setup.py로 분리
+
+### Fixed
+- is_focus_in_message_list import 누락
+- 메시지 보기 창 첫 열림 시 포커스 이동 안 되던 문제
+
+### Removed
+- MSAA fallback (UIA 전용)
+- V키 메시지 리뷰 기능
+- SpeakCallback 인프라 (speak() 직접 사용)
+- 미사용 함수/모듈 정리 (beep.py, uia_reliability.py, uia_workarounds.py 등)
+
 ## [0.6.1] - 2026-01-27
 
 이번 버전은 업데이터 안정성을 개선했습니다.

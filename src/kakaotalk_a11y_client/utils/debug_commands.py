@@ -18,7 +18,7 @@ from ..accessibility import speak
 from .debug_config import debug_config
 from .debug_tools import debug_tools, KakaoNotFoundError
 from .profiler import profiler
-from .event_monitor import EventMonitor, EventLog
+from .event_monitor import EventMonitor, ConsoleFormatter
 from .debug import get_logger
 
 log = get_logger("DebugCommands")
@@ -30,6 +30,15 @@ _test_cancelled = False
 
 # 등록된 핫키 추적 {name: hotkey_string}
 _registered_hotkeys: dict[str, str] = {}
+
+# 로그 포맷터 (타임스탬프 제외 — Logger가 자체 타임스탬프 추가)
+_log_formatter = ConsoleFormatter(show_timestamp=False)
+
+
+def _log_callback(event) -> None:
+    """이벤트를 debug.log에 기록하는 콜백."""
+    formatted = _log_formatter.format(event)
+    log.debug(f"[EVENT] {formatted}")
 
 
 def _format_hotkey_for_keyboard(config: dict) -> str:
@@ -71,12 +80,6 @@ def _on_show_profile():
         speak("프로파일 완료")
 
 
-def _on_event_log(event: EventLog):
-    """새 이벤트 모니터의 기본 콜백. 콘솔 출력은 EventMonitor 내부에서 처리."""
-    # EventMonitor가 ConsoleFormatter로 자동 출력하므로 여기선 추가 작업 없음
-    pass
-
-
 def _on_show_status():
     """현재 디버그 상태 요약 발화 (Ctrl+Shift+S)."""
     status_parts = []
@@ -103,10 +106,9 @@ def _on_toggle_event_monitor():
 
     if _event_monitor_active:
         if _event_monitor is None:
-            # debug_config에서 설정 가져오기
             config = debug_config.event_monitor_config
             _event_monitor = EventMonitor(config=config)
-        _event_monitor.start()  # 기본 콘솔 출력 사용
+        _event_monitor.start(callback=_log_callback)
         active = _event_monitor.active_events
         event_names = ", ".join(e.name for e in active)
         print(f"[DEBUG] 이벤트 모니터 활성화 - {event_names}")
@@ -116,6 +118,39 @@ def _on_toggle_event_monitor():
             _event_monitor.stop()
         print("[DEBUG] 이벤트 모니터 비활성화")
         speak("이벤트 모니터 비활성화")
+
+
+def auto_start_event_monitor() -> None:
+    """--debug 시 이벤트 모니터 자동 시작. 실패해도 앱 시작은 계속."""
+    global _event_monitor_active, _event_monitor
+
+    config = debug_config.event_monitor_config
+    if config is None:
+        return
+
+    try:
+        _event_monitor = EventMonitor(config=config)
+        if _event_monitor.start(callback=_log_callback):
+            _event_monitor_active = True
+            active = _event_monitor.active_events
+            event_names = ", ".join(e.name for e in active)
+            log.info(f"EventMonitor auto-started: {event_names}")
+        else:
+            log.warning("EventMonitor auto-start failed")
+    except Exception as e:
+        log.warning(f"EventMonitor auto-start error: {e}")
+
+
+def stop_event_monitor() -> None:
+    """이벤트 모니터 정지 (atexit 정리용)."""
+    global _event_monitor_active, _event_monitor
+
+    if _event_monitor and _event_monitor_active:
+        try:
+            _event_monitor.stop()
+        except Exception:
+            pass
+        _event_monitor_active = False
 
 
 def _on_test_navigation():

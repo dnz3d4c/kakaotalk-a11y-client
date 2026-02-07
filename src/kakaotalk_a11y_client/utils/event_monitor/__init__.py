@@ -13,15 +13,6 @@ from .types import (
 from .config import EventMonitorConfig
 from .monitor import EventMonitor
 from .formatters import ConsoleFormatter, JsonFormatter, TableFormatter
-from .recommender import (
-    get_recommendations,
-    get_recommendations_for_control,
-    format_recommendations,
-    print_recommendations,
-    print_recommendations_for_control,
-    CONTROL_TYPE_RECOMMENDATIONS,
-    EVENT_TYPE_DESCRIPTIONS,
-)
 from .handlers import PROPERTY_IDS, DEFAULT_PROPERTY_IDS
 
 __all__ = [
@@ -40,14 +31,6 @@ __all__ = [
     "ConsoleFormatter",
     "JsonFormatter",
     "TableFormatter",
-    # 권장 이벤트
-    "get_recommendations",
-    "get_recommendations_for_control",
-    "format_recommendations",
-    "print_recommendations",
-    "print_recommendations_for_control",
-    "CONTROL_TYPE_RECOMMENDATIONS",
-    "EVENT_TYPE_DESCRIPTIONS",
     # 속성 ID
     "PROPERTY_IDS",
     "DEFAULT_PROPERTY_IDS",

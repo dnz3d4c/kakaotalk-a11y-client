@@ -79,6 +79,9 @@ from .debug import get_logger
 
 log = get_logger("UIA_Events")
 
+# UIA 이벤트 ID 상수
+UIA_ELEMENT_SELECTED_EVENT_ID = 20012  # SelectionItem.ElementSelected
+
 
 class FocusChangedHandler(COMObject):
     """FocusChanged COM 콜백. 공용 클래스.
@@ -153,9 +156,6 @@ def _create_uia_client():
 from .uia_focus_handler import (
     FocusEvent,
     FocusMonitor,
-    get_focus_monitor,
-    start_focus_monitoring,
-    stop_focus_monitoring,
 )
 # FocusChangedHandler는 이 파일에서 직접 정의 (위 참조)
 
@@ -185,9 +185,6 @@ __all__ = [
     "FocusChangedHandler",
     "AutomationEventHandler",
     "FocusMonitor",
-    "get_focus_monitor",
-    "start_focus_monitoring",
-    "stop_focus_monitoring",
     # Message 모니터 (uia_message_monitor)
     "StructureChangedHandler",
     "MessageEvent",

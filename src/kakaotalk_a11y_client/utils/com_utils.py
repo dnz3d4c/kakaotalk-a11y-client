@@ -4,17 +4,12 @@
 
 import threading
 from contextlib import contextmanager
-from functools import wraps
-from typing import Callable, TypeVar, ParamSpec
 
 import pythoncom
 
 # 스레드별 초기화 상태 추적
 _initialized_threads: set[int] = set()
 _lock = threading.Lock()
-
-P = ParamSpec('P')
-R = TypeVar('R')
 
 
 def _get_thread_id() -> int:
@@ -47,12 +42,6 @@ def uninit_com_for_thread() -> bool:
         return True
 
 
-def is_com_initialized() -> bool:
-    thread_id = _get_thread_id()
-    with _lock:
-        return thread_id in _initialized_threads
-
-
 @contextmanager
 def com_thread():
     """COM 초기화/해제 컨텍스트 매니저. 새로 초기화한 경우에만 해제."""
@@ -62,16 +51,3 @@ def com_thread():
     finally:
         if newly_initialized:
             uninit_com_for_thread()
-
-
-def ensure_com_initialized(func: Callable[P, R]) -> Callable[P, R]:
-    """COM 초기화 보장 데코레이터. 새로 초기화한 경우에만 해제."""
-    @wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        newly_initialized = init_com_for_thread()
-        try:
-            return func(*args, **kwargs)
-        finally:
-            if newly_initialized:
-                uninit_com_for_thread()
-    return wrapper

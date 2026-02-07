@@ -10,11 +10,12 @@ from typing import TYPE_CHECKING, Optional
 from .status_panel import StatusPanel
 from .hotkey_panel import HotkeyPanel
 from .. import __about__
+from ..config import APP_DISPLAY_NAME
+from ..settings import get_settings, HOTKEY_NAMES, DEBUG_HOTKEY_NAMES
 from ..utils.debug_config import debug_config
 
 if TYPE_CHECKING:
     from ..main import EmojiClicker
-    from .debug_hotkey_panel import DebugHotkeyPanel
 
 
 class SettingsDialog(wx.Dialog):
@@ -23,11 +24,11 @@ class SettingsDialog(wx.Dialog):
     def __init__(self, parent: wx.Window, clicker: "EmojiClicker"):
         super().__init__(
             parent,
-            title="카카오톡 접근성 클라이언트 설정",
+            title=f"{APP_DISPLAY_NAME} 설정",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
         self.clicker = clicker
-        self.debug_hotkey_panel: Optional["DebugHotkeyPanel"] = None
+        self.debug_hotkey_panel: Optional[HotkeyPanel] = None
 
         self._create_ui()
         self._set_initial_size()
@@ -41,18 +42,46 @@ class SettingsDialog(wx.Dialog):
         # 노트북 (탭 컨테이너)
         self.notebook = wx.Notebook(self)
 
+        settings = get_settings()
+
         # 상태 탭
         self.status_panel = StatusPanel(self.notebook, self.clicker)
         self.notebook.AddPage(self.status_panel, "상태(&T)")
 
         # 단축키 탭
-        self.hotkey_panel = HotkeyPanel(self.notebook, self.clicker)
+        self.hotkey_panel = HotkeyPanel(
+            self.notebook,
+            self.clicker,
+            hotkey_names=["scan", "exit"],
+            name_map=HOTKEY_NAMES,
+            settings_getter=settings.get_all_hotkeys,
+            settings_item_getter=settings.get_hotkey,
+            settings_setter=settings.set_hotkey,
+            default_key="hotkeys",
+        )
         self.notebook.AddPage(self.hotkey_panel, "단축키(&K)")
 
         # 디버그 단축키 탭 (디버그 모드에서만)
         if debug_config.enabled:
-            from .debug_hotkey_panel import DebugHotkeyPanel
-            self.debug_hotkey_panel = DebugHotkeyPanel(self.notebook, self.clicker)
+            from ..utils.debug_commands import reload_debug_hotkeys
+            self.debug_hotkey_panel = HotkeyPanel(
+                self.notebook,
+                self.clicker,
+                hotkey_names=[
+                    "dump", "profile", "event_monitor",
+                    "status", "test_navigation", "test_message",
+                ],
+                name_map=DEBUG_HOTKEY_NAMES,
+                settings_getter=settings.get_all_debug_hotkeys,
+                settings_item_getter=settings.get_debug_hotkey,
+                settings_setter=settings.set_debug_hotkey,
+                default_key="debug_hotkeys",
+                section_label="디버그 단축키 설정",
+                help_text="디버그 모드에서만 동작하는 단축키입니다.\n"
+                          "변경 후 '저장'을 누르면 즉시 적용됩니다.",
+                first_col_width=180,
+                on_apply_callback=reload_debug_hotkeys,
+            )
             self.notebook.AddPage(self.debug_hotkey_panel, "디버그 단축키(&D)")
 
         # 정보 탭
@@ -89,7 +118,7 @@ class SettingsDialog(wx.Dialog):
         grid.AddGrowableCol(1)
 
         info_items = [
-            ("프로그램", "카카오톡 접근성 클라이언트"),
+            ("프로그램", APP_DISPLAY_NAME),
             ("버전", __about__.__version__),
             ("저작자", __about__.__author__),
             ("라이선스", __about__.__license__),

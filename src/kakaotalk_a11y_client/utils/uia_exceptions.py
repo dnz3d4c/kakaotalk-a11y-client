@@ -2,10 +2,7 @@
 # Copyright 2025-2026 dnz3d4c
 """COMError 안전 래퍼. NVDA 패턴 - UIA 에러 핸들링."""
 
-import functools
-from typing import Any, Callable, List, Optional
-
-import uiautomation as auto
+from typing import Any, Callable
 
 try:
     from comtypes import COMError
@@ -43,32 +40,3 @@ def safe_uia_call(
                 msg = f"{error_msg} - {msg}"
             profile_logger.error(msg)
         return default
-
-
-def handle_uia_errors(default_return: Any = None):
-    """UIA 에러 처리 데코레이터. 에러 시 default_return 반환."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            return safe_uia_call(
-                lambda: func(*args, **kwargs),
-                default=default_return,
-                error_msg=func.__name__
-            )
-        return wrapper
-    return decorator
-
-
-@handle_uia_errors(default_return=[])
-def get_children_safe(control: auto.Control) -> List[auto.Control]:
-    return control.GetChildren()
-
-
-@handle_uia_errors(default_return=None)
-def get_focused_safe() -> Optional[auto.Control]:
-    return auto.GetFocusedControl()
-
-
-@handle_uia_errors(default_return=None)
-def get_parent_safe(control: auto.Control) -> Optional[auto.Control]:
-    return control.GetParentControl()

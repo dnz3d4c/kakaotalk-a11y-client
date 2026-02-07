@@ -6,6 +6,7 @@ import wx
 import wx.adv
 from typing import TYPE_CHECKING
 
+from ..config import APP_DISPLAY_NAME
 from ..utils.debug import get_logger
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ class TrayIcon(wx.adv.TaskBarIcon):
         icon.CopyFromBitmap(
             wx.ArtProvider.GetBitmap(wx.ART_INFORMATION, wx.ART_OTHER, (16, 16))
         )
-        self.SetIcon(icon, "카카오톡 접근성 클라이언트")
+        self.SetIcon(icon, APP_DISPLAY_NAME)
 
     def CreatePopupMenu(self) -> wx.Menu:
         """우클릭 메뉴 생성. 메뉴에 직접 이벤트 바인딩."""

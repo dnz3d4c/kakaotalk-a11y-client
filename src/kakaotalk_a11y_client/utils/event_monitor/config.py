@@ -10,8 +10,6 @@ from .types import (
     EventType,
     OutputFormat,
     DEFAULT_EVENT_TYPES,
-    DEBUG_DEFAULT_EVENTS,
-    TRACE_DEFAULT_EVENTS,
 )
 
 
@@ -67,14 +65,12 @@ class EventMonitorConfig:
         cls,
         events_arg: Optional[str] = None,
         filter_arg: Optional[str] = None,
-        format_arg: Optional[str] = None,
     ) -> "EventMonitorConfig":
         """CLI 인자로부터 설정 생성.
 
         Args:
             events_arg: "all" 또는 "focus,structure,property" 형식
             filter_arg: "ListItemControl,MenuItemControl" 형식
-            format_arg: "console", "json", "table"
         """
         config = cls()
 
@@ -95,17 +91,6 @@ class EventMonitorConfig:
         if filter_arg:
             config.filter_control_types = set(
                 f.strip() for f in filter_arg.split(",") if f.strip()
-            )
-
-        # 출력 형식 파싱
-        if format_arg:
-            format_map = {
-                "console": OutputFormat.CONSOLE,
-                "json": OutputFormat.JSON,
-                "table": OutputFormat.TABLE,
-            }
-            config.output_format = format_map.get(
-                format_arg.lower(), OutputFormat.CONSOLE
             )
 
         return config

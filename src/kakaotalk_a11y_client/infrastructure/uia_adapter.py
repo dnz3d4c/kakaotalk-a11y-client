@@ -5,7 +5,6 @@
 import threading
 from typing import Any, List, Optional, Protocol, runtime_checkable
 
-import pythoncom
 import uiautomation as auto
 
 from ..utils.uia_utils import safe_uia_call, get_children_recursive
@@ -76,10 +75,6 @@ class UIAAdapter(Protocol):
 class UIAAdapterImpl:
     """UIAAdapter 실제 구현. uiautomation 라이브러리 래핑."""
 
-    def __init__(self):
-        self._com_initialized: dict[int, bool] = {}  # thread_id -> initialized
-        self._lock = threading.Lock()
-
     def get_control_from_handle(self, hwnd: int) -> Optional[Control]:
         """윈도우 핸들로 컨트롤 가져오기. COMError 안전 래핑."""
         return safe_uia_call(
@@ -132,28 +127,16 @@ class UIAAdapterImpl:
         )
 
     def init_com(self) -> None:
-        """현재 스레드 COM 초기화. 중복 초기화 방지."""
-        thread_id = threading.current_thread().ident
-        with self._lock:
-            if thread_id not in self._com_initialized or not self._com_initialized[thread_id]:
-                try:
-                    pythoncom.CoInitialize()
-                    self._com_initialized[thread_id] = True
-                    log.trace(f"COM initialized (thread={thread_id})")
-                except Exception as e:
-                    log.warning(f"COM init failed: {e}")
+        """현재 스레드 COM 초기화. com_utils에 위임."""
+        from ..utils.com_utils import init_com_for_thread
+        if init_com_for_thread():
+            log.trace(f"COM initialized (thread={threading.current_thread().ident})")
 
     def uninit_com(self) -> None:
-        """현재 스레드 COM 해제."""
-        thread_id = threading.current_thread().ident
-        with self._lock:
-            if self._com_initialized.get(thread_id, False):
-                try:
-                    pythoncom.CoUninitialize()
-                    self._com_initialized[thread_id] = False
-                    log.trace(f"COM uninitialized (thread={thread_id})")
-                except Exception as e:
-                    log.trace(f"COM uninit failed (ignored): {e}")
+        """현재 스레드 COM 해제. com_utils에 위임."""
+        from ..utils.com_utils import uninit_com_for_thread
+        if uninit_com_for_thread():
+            log.trace(f"COM uninitialized (thread={threading.current_thread().ident})")
 
     def get_focused_control(self) -> Optional[Control]:
         """현재 포커스된 컨트롤 반환."""

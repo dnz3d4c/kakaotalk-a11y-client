@@ -5,7 +5,7 @@
 import threading
 from typing import Any, List, Optional, TYPE_CHECKING
 
-from ..config import SEARCH_DEPTH_MESSAGE_LIST
+from ..config import KAKAO_MESSAGE_LIST_NAME, SEARCH_DEPTH_MESSAGE_LIST
 from ..utils.debug_tools import debug_tools
 from ..utils.uia_cache import message_list_cache
 
@@ -78,9 +78,18 @@ class ChatRoomNavigator:
 
     @property
     def current_focused_item(self) -> Optional[Any]:
-        """컨텍스트 메뉴 표시용 포커스 메시지."""
+        """현재 포커스된 메시지 항목. stale 시 None 반환."""
         with self._lock:
-            return self._current_focused_item
+            item = self._current_focused_item
+            if item is None:
+                return None
+            # stale 검증 — UIA 요소가 무효화되었을 수 있음
+            try:
+                _ = item.Name
+                return item
+            except Exception:
+                self._current_focused_item = None
+                return None
 
     @current_focused_item.setter
     def current_focused_item(self, item: Optional[Any]):
@@ -110,11 +119,11 @@ class ChatRoomNavigator:
                 # 채팅방 내 메시지 리스트 찾기
                 msg_list = self._uia.find_list_control(
                     self.chat_control,
-                    name="메시지",
+                    name=KAKAO_MESSAGE_LIST_NAME,
                     search_depth=SEARCH_DEPTH_MESSAGE_LIST
                 )
 
-                if not msg_list or not self._uia.control_exists(msg_list, max_seconds=1.0):
+                if not msg_list or not self._uia.control_exists(msg_list, max_seconds=0.1):
                     return False
 
                 # 메시지 목록 참조 저장
@@ -125,12 +134,16 @@ class ChatRoomNavigator:
 
                 self.messages = messages
 
-                # 빈 리스트 감지 시 덤프
-                debug_tools.dump_on_condition(
-                    'empty_list',
-                    len(messages) == 0,
-                    {'list_name': 'messages', 'cache_used': use_cache}
-                )
+                # 빈 리스트 감지 시 덤프 (직접 자식이 있으면 오탐이므로 스킵)
+                if len(messages) == 0:
+                    direct_children = self._uia.get_direct_children(msg_list)
+                    is_truly_empty = len(direct_children) == 0
+                    debug_tools.dump_on_condition(
+                        'empty_list',
+                        is_truly_empty,
+                        {'list_name': 'messages', 'cache_used': use_cache,
+                         'direct_children_count': len(direct_children)}
+                    )
 
                 # 캐시에 저장
                 if messages:

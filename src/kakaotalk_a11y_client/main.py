@@ -9,6 +9,7 @@ import sys
 import time
 from typing import Optional
 
+from .config import APP_DISPLAY_NAME, TIMING_TTS_READ_DELAY, TIMING_PROCESS_TERMINATION_WAIT
 from .window_finder import (
     find_chat_window,
     get_client_rect,
@@ -30,8 +31,12 @@ from .navigation import ChatRoomNavigator
 from .navigation.message_monitor import MessageMonitor
 from .mode_manager import ModeManager
 from .focus_monitor import FocusMonitorService
-from .utils.debug import get_logger, is_debug_enabled, get_log_file_path, set_global_level, LogLevel
-from .utils.profiler import profiler, profile_logger, init_profiler
+from .message_actions import (
+    MessageActionManager,
+    MessageTextExtractor,
+    CopyMessageAction,
+)
+from .utils.debug import get_logger, get_log_file_path
 
 log = get_logger("Main")
 
@@ -52,13 +57,32 @@ class EmojiClicker:
         # 모드 관리자
         self.mode_manager = ModeManager()
 
+        # 메시지 액션 관리자 (C: 복사)
+        self.message_actions = self._create_message_actions()
+
         # 포커스 모니터
         self.focus_monitor = FocusMonitorService(
             mode_manager=self.mode_manager,
             message_monitor=self.message_monitor,
             chat_navigator=self.chat_navigator,
             hotkey_manager=self.hotkey_manager,
+            message_actions=self.message_actions,
         )
+
+    def _create_message_actions(self) -> MessageActionManager:
+        """메시지 액션 관리자 생성 및 액션 등록."""
+        manager = MessageActionManager()
+        extractor = MessageTextExtractor()
+
+        # current_focused_item을 포커스 제공자로 연결
+        focus_getter = lambda: self.chat_navigator.current_focused_item
+        extractor.set_focus_provider(focus_getter)
+        manager.set_focus_provider(focus_getter)
+
+        # C 키: 메시지 복사
+        manager.register("c", CopyMessageAction(extractor))
+
+        return manager
 
     def initialize(self) -> bool:
         """템플릿 로드 및 핫키 등록. 실패 시 False."""
@@ -158,7 +182,7 @@ class EmojiClicker:
         log_path = get_log_file_path()
         if log_path:
             log.info(f"log file: {log_path}")
-        speak("카카오톡 접근성 클라이언트 시작")
+        speak(f"{APP_DISPLAY_NAME} 시작")
 
         # UIA 체크 (카카오톡 유무와 무관)
         uia_result = check_uia_available()
@@ -213,7 +237,7 @@ class EmojiClicker:
         self.hotkey_manager.cleanup()
 
         speak("종료")
-        time.sleep(0.3)  # 스크린 리더가 읽을 시간 확보
+        time.sleep(TIMING_TTS_READ_DELAY)  # 스크린 리더가 읽을 시간 확보
         log.debug("cleanup completed")
 
 
@@ -242,7 +266,7 @@ def _signal_handler(signum, frame):
 def parse_args():
     """CLI 인자 파싱. --debug, --trace 등."""
     parser = argparse.ArgumentParser(
-        description='카카오톡 접근성 클라이언트'
+        description=APP_DISPLAY_NAME
     )
 
     # 디버그 옵션
@@ -275,19 +299,6 @@ def parse_args():
     )
 
     parser.add_argument(
-        '--debug-events-format',
-        choices=['console', 'json', 'table'],
-        default='console',
-        help='이벤트 출력 형식 (기본: console)'
-    )
-
-    parser.add_argument(
-        '--debug-events-suggest',
-        action='store_true',
-        help='권장 이벤트 제안 모드 (포커스 요소별 권장 이벤트 출력)'
-    )
-
-    parser.add_argument(
         '--debug-dump-on-start',
         action='store_true',
         help='시작 시 카카오톡 트리 덤프'
@@ -308,79 +319,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def main() -> int:
-    """진입점. 0=정상, 1=오류."""
-    global _clicker_instance
-
-    # CLI 인자 파싱
-    args = parse_args()
-
-    # 디버그 모드 초기화
-    from .utils.debug_config import init_debug_mode, debug_config
-    from .utils.debug_tools import debug_tools
-    from .utils.debug_commands import register_debug_hotkeys
-
-    if args.debug:
-        # --trace 옵션이 있으면 TRACE 레벨, 없으면 DEBUG 레벨
-        if args.trace:
-            set_global_level(LogLevel.TRACE)
-            print("[DEBUG] TRACE 모드 활성화 (고빈도 로그 포함)")
-        else:
-            set_global_level(LogLevel.DEBUG)
-            print("[DEBUG] 디버그 모드 활성화")
-        init_profiler(enabled=True)
-
-        # 이벤트 모니터 설정 생성 (--debug 시 자동 활성화)
-        from .utils.event_monitor import EventMonitorConfig
-        from .utils.event_monitor.types import DEBUG_DEFAULT_EVENTS, TRACE_DEFAULT_EVENTS
-
-        if args.debug_events is not None:
-            # 명시적 --debug-events 옵션 사용
-            event_monitor_config = EventMonitorConfig.from_cli_args(
-                events_arg=args.debug_events if args.debug_events != 'default' else None,
-                filter_arg=args.debug_events_filter,
-                format_arg=args.debug_events_format,
-            )
-        else:
-            # --debug 기본 이벤트 모니터 (Focus + Structure)
-            # --trace 시 확장 이벤트 (+ Property, Menu*)
-            default_events = TRACE_DEFAULT_EVENTS if args.trace else DEBUG_DEFAULT_EVENTS
-            event_monitor_config = EventMonitorConfig(event_types=set(default_events))
-            print(f"[DEBUG] 이벤트 모니터 자동 활성화: {', '.join(e.name for e in default_events)}")
-
-        init_debug_mode(
-            enabled=True,
-            enable_event_monitor=True,  # --debug 시 항상 활성화
-            event_monitor_config=event_monitor_config,
-            enable_suggest_mode=args.debug_events_suggest,
-        )
-    elif args.debug_profile:
-        init_profiler(enabled=True)
-        init_debug_mode(
-            enabled=True,
-            enable_inspector=False,
-            enable_event_monitor=False,
-        )
-        print("[DEBUG] 프로파일러 전용 모드")
-    else:
-        # 환경변수 기반 초기화 (하위 호환)
-        init_profiler()
-
-    # 시작 시 덤프
-    if args.debug_dump_on_start and debug_config.enabled:
-        try:
-            dump_path = debug_tools.dump_to_file(filename_prefix='startup')
-            print(f"[DEBUG] 시작 덤프 저장: {dump_path}")
-        except Exception as e:
-            print(f"[DEBUG] 시작 덤프 실패: {e}")
-
-    # 디버그 단축키 등록
-    if debug_config.enabled:
-        register_debug_hotkeys()
-        # 세션 리포트 생성 등록
-        atexit.register(lambda: debug_tools.generate_session_report())
-
-    # 프로세스 잠금 확인 - 기존 프로세스 자동 종료
+def _setup_process(args) -> int:
+    """프로세스 락 + 시그널 핸들러 설정. 실패 시 1 반환, 성공 시 0."""
     from .utils.process_lock import get_process_lock
     lock = get_process_lock()
 
@@ -393,7 +333,7 @@ def main() -> int:
         log.debug("existing process detected, attempting termination")
 
         if lock.terminate_existing():
-            time.sleep(0.5)  # 종료 대기
+            time.sleep(TIMING_PROCESS_TERMINATION_WAIT)  # 종료 대기
             if not lock.acquire():
                 speak("프로세스 시작 실패")
                 log.debug("failed to acquire process lock")
@@ -411,14 +351,27 @@ def main() -> int:
         # GUI 모드: 기본 핸들러 사용 (wx가 처리)
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    # cleanup 핸들러 등록
+    return 0
+
+
+def main() -> int:
+    """진입점. 0=정상, 1=오류."""
+    global _clicker_instance
+
+    args = parse_args()
+
+    from .utils.debug_setup import setup_debug
+    setup_debug(args)
+
+    if _setup_process(args) != 0:
+        return 1
+
     atexit.register(_cleanup_handler)
 
     _clicker_instance = EmojiClicker()
     if not _clicker_instance.initialize():
         return 1
 
-    # GUI 모드가 기본 (--console은 디버그 모드에서만 유효)
     use_console = args.console and args.debug
     _clicker_instance.run(use_gui=not use_console)
     return 0

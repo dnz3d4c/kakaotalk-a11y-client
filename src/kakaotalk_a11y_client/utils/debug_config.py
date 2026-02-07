@@ -26,13 +26,15 @@ class DebugConfig:
     # 이벤트 모니터 설정 (EventMonitorConfig 인스턴스)
     event_monitor_config: Optional[Any] = None
 
-    # 권장 이벤트 제안 모드
-    enable_suggest_mode: bool = False
-
     # 자동 덤프 트리거 조건
     auto_dump_on_error: bool = True
     auto_dump_on_slow: bool = True
     slow_threshold_ms: float = 500  # 이 시간 초과 시 자동 덤프
+
+    # 덤프 파일 관리
+    max_dump_files: int = 50  # auto_* 최대 보관 (쌍 단위, 실제 파일 수는 2배)
+    dump_cooldown_seconds: float = 60.0  # 동일 트리거 덤프 최소 간격(초)
+    max_profile_files: int = 10  # profile_*.log 최대 보관
 
     # 로깅 레벨
     log_level: str = 'DEBUG'  # 일반 모드는 'INFO'

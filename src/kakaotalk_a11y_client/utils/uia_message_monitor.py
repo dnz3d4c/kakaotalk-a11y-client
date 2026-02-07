@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 import uiautomation as auto
 
-from ..config import TIMING_EVENT_PUMP_INTERVAL
+from ..config import TIMING_EVENT_PUMP_INTERVAL, TIMING_MESSAGE_DEBOUNCE_SECS, TIMING_THREAD_JOIN_TIMEOUT
 from .com_utils import com_thread
 
 # COM 인터페이스 import (uia_events에서)
@@ -19,13 +19,12 @@ from .uia_events import (
     IUIAutomationStructureChangedEventHandler,
     TreeScope_Subtree,
     _create_uia_client,
+    AutomationEventHandler,
+    UIA_ELEMENT_SELECTED_EVENT_ID,
 )
 
 from .debug import get_logger
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from ..infrastructure.speak_callback import SpeakCallback
+from .uia_focus_handler import FocusEvent
 
 log = get_logger("UIA_MsgMon")
 
@@ -63,30 +62,32 @@ class MessageListMonitor:
     """StructureChanged 이벤트로 새 메시지 감지. 200ms 디바운싱."""
 
     # 이벤트 디바운싱 설정
-    EVENT_DEBOUNCE_INTERVAL = 0.2  # 200ms 윈도우
+    EVENT_DEBOUNCE_INTERVAL = TIMING_MESSAGE_DEBOUNCE_SECS
 
     def __init__(
         self,
         list_control: auto.Control,
-        speak_callback: "SpeakCallback | None" = None
+        speak_callback: Optional[Callable[[str], None]] = None,
+        on_selection_changed: Optional[Callable[["FocusEvent"], None]] = None,
     ):
         self.list_control = list_control
 
-        # SpeakCallback 의존성 주입
-        from ..infrastructure.speak_callback import get_default_speak_callback
-        self._speak = speak_callback or get_default_speak_callback()
+        # speak 콜백 의존성 주입
+        from ..accessibility import speak
+        self._speak = speak_callback or speak
 
         self._running = False
         self._paused = False  # pause 상태 (이벤트 수신은 유지, 콜백만 무시)
         self._thread: Optional[threading.Thread] = None
         self._callback: Optional[Callable[[MessageEvent], None]] = None
+        self._selection_callback = on_selection_changed  # ElementSelected → FocusEvent
         self._last_count = 0
         self._lock = threading.Lock()
 
         # COM 객체
         self._uia = None
         self._event_handler = None  # StructureChanged 핸들러
-        self._focus_handler = None  # FocusChanged 핸들러 (현재 미사용)
+        self._selection_handler = None  # ElementSelected 핸들러
         self._root_element = None
 
         # 이벤트 디바운싱 (발화 끊김 방지)
@@ -136,7 +137,7 @@ class MessageListMonitor:
             self._debounce_timer = None
 
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=TIMING_THREAD_JOIN_TIMEOUT)
 
         log.debug("MessageListMonitor stopped")
 
@@ -233,9 +234,30 @@ class MessageListMonitor:
 
             log.info("MessageListMonitor: StructureChanged event registered")
 
-            # NOTE: FocusChanged 이벤트는 비활성화됨
-            # 전역 이벤트로 모든 포커스 변경을 수신해서 CPU 스파이크 유발
-            # 메시지 탐색은 NVDA 네이티브에 위임
+            # ElementSelected 이벤트 등록 (NVDA queueEvent("gainFocus") 패턴)
+            # FocusChanged 누락 시 안전망: 선택 → 포커스로 변환
+            if self._selection_callback:
+                try:
+                    cache_request = None
+                    try:
+                        cache_request = self._uia.CreateCacheRequest()
+                    except Exception:
+                        pass
+
+                    self._selection_handler = AutomationEventHandler(
+                        callback=self._on_element_selected, logger=log
+                    )
+                    self._uia.AddAutomationEventHandler(
+                        UIA_ELEMENT_SELECTED_EVENT_ID,
+                        self._root_element,
+                        TreeScope_Subtree,
+                        cache_request,
+                        self._selection_handler
+                    )
+                    log.info("MessageListMonitor: ElementSelected event registered")
+                except Exception as e:
+                    log.debug(f"ElementSelected registration failed (non-fatal): {e}")
+                    self._selection_handler = None
 
             return True
 
@@ -247,6 +269,21 @@ class MessageListMonitor:
             return False
 
     def _unregister_event(self) -> None:
+        try:
+            # ElementSelected 핸들러 해제
+            if self._selection_handler and self._uia and self._root_element:
+                try:
+                    self._uia.RemoveAutomationEventHandler(
+                        UIA_ELEMENT_SELECTED_EVENT_ID,
+                        self._root_element,
+                        self._selection_handler
+                    )
+                    log.debug("ElementSelected event unregistered")
+                except Exception as e:
+                    log.trace(f"ElementSelected unregister error: {e}")
+        except Exception:
+            pass
+
         try:
             # StructureChanged 핸들러 해제
             if self._event_handler and self._uia and self._root_element:
@@ -260,8 +297,45 @@ class MessageListMonitor:
         finally:
             self._uia = None
             self._event_handler = None
-            self._focus_handler = None
+            self._selection_handler = None
             self._root_element = None
+
+    def _on_element_selected(self, sender, eventId) -> None:
+        """ElementSelected → FocusEvent 변환. NVDA queueEvent("gainFocus") 등가."""
+        if not self._running or self._paused or not self._selection_callback:
+            return
+
+        try:
+            control = auto.Control(element=sender)
+            if not control:
+                return
+
+            # Name 비어 있으면 Value 폴백 (NVDA _get_name 패턴)
+            UIA_ValueValuePropertyId = 30045
+            name = control.Name or ""
+            if not name.strip():
+                try:
+                    value = control.GetPropertyValue(UIA_ValueValuePropertyId)
+                    if value:
+                        name = str(value)
+                except Exception:
+                    pass
+
+            if not name.strip():
+                log.trace("[ElementSelected] no name/value, skipping")
+                return
+
+            log.trace(f"[ElementSelected] {control.ControlTypeName}: {name[:30]}")
+
+            event = FocusEvent(
+                control=control,
+                timestamp=time.time(),
+                source="selection"
+            )
+            self._selection_callback(event)
+
+        except Exception as e:
+            log.trace(f"ElementSelected callback error: {e}")
 
     def _on_structure_changed(self, change_type: int) -> None:
         """200ms 디바운싱 후 _flush_pending_events 호출."""
@@ -337,42 +411,6 @@ class MessageListMonitor:
 
         except Exception as e:
             log.trace(f"event flush error: {e}")
-
-    def _on_focus_changed(self, sender) -> None:
-        """Name이 빈 경우에만 자식에서 텍스트 추출. 있으면 NVDA에 위임."""
-        if not self._running:
-            return
-
-        try:
-            name = sender.CurrentName or ""
-
-            # Name이 있으면 NVDA에 위임 (이중 발화 방지)
-            if name.strip():
-                return
-
-            # Name이 비어있음 → 자식에서 텍스트 추출 시도
-            try:
-                true_condition = self._uia.CreateTrueCondition()
-                children = sender.FindAll(TreeScope_Subtree, true_condition)
-
-                texts = []
-                if children:
-                    for i in range(children.Length):
-                        child = children.GetElement(i)
-                        child_name = child.CurrentName
-                        if child_name and child_name.strip():
-                            texts.append(child_name)
-
-                if texts:
-                    combined = " ".join(texts)
-                    self._speak(combined)
-                    log.debug(f"FocusChanged speak (empty Name fallback): {combined[:30]}...")
-
-            except Exception as e:
-                log.trace(f"child text extraction failed: {e}")
-
-        except Exception as e:
-            log.trace(f"FocusChanged processing error: {e}")
 
     @property
     def is_running(self) -> bool:

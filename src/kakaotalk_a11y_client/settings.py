@@ -6,6 +6,7 @@ JSON 기반 설정 영속화.
 """
 
 import json
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -166,10 +167,14 @@ class Settings:
 
 # 전역 싱글톤 인스턴스
 _settings_instance: Optional[Settings] = None
+_settings_lock = threading.Lock()
 
 
 def get_settings() -> Settings:
+    """여러 스레드에서 호출 가능 (GUI + FocusMonitor). double-check lock."""
     global _settings_instance
     if _settings_instance is None:
-        _settings_instance = Settings()
+        with _settings_lock:
+            if _settings_instance is None:
+                _settings_instance = Settings()
     return _settings_instance

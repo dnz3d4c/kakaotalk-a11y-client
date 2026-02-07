@@ -9,19 +9,22 @@ import time
 import threading
 import win32gui
 from enum import Enum
-from typing import Optional, Callable, TYPE_CHECKING
+from typing import Optional, Callable
 
-from ..config import TIMING_MENU_CACHE_TTL
+from ..config import (
+    KAKAO_TAB_FRIENDS,
+    KAKAO_TAB_CHATS,
+    KAKAO_MENU_ITEM_PLACEHOLDER,
+    KAKAO_MENU_AUTOMATION_ID,
+    TIMING_MENU_CACHE_TTL,
+    TIMING_MENU_BRIDGING_THRESHOLD,
+    SEARCH_DEPTH_TAB_CONTROL,
+    SEARCH_MAX_SECONDS_FALLBACK,
+)
+from ..window_finder import KAKAOTALK_MENU_CLASS
 from .debug import get_logger
-from .uia_workarounds import get_element_name
-
-if TYPE_CHECKING:
-    pass
 
 log = get_logger("MenuHandler")
-
-# 카카오톡 메뉴 클래스명
-KAKAOTALK_MENU_CLASS = "EVA_Menu"
 
 
 class MenuType(Enum):
@@ -49,7 +52,7 @@ class MenuHandler:
         self._menu_enter_time: float = 0.0
         self._menu_exit_time: float = 0.0
         self._current_menu_type: MenuType = MenuType.UNKNOWN
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         # 메뉴 감지 캐시 (EnumWindows 호출 비용 절감)
         self._menu_cache: dict = {"hwnd": None, "time": 0.0}
@@ -68,12 +71,14 @@ class MenuHandler:
         now = time.time()
 
         # 캐시 유효하면 바로 반환
-        if now - self._menu_cache["time"] < TIMING_MENU_CACHE_TTL:
-            return self._menu_cache["hwnd"]
+        with self._lock:
+            if now - self._menu_cache["time"] < TIMING_MENU_CACHE_TTL:
+                return self._menu_cache["hwnd"]
 
-        # 실제 검색
+        # 실제 검색 (락 밖에서 수행 - EnumWindows 비용)
         hwnd = self._find_menu_window_impl()
-        self._menu_cache = {"hwnd": hwnd, "time": now}
+        with self._lock:
+            self._menu_cache = {"hwnd": hwnd, "time": now}
         return hwnd
 
     def _find_menu_window_impl(self) -> Optional[int]:
@@ -112,7 +117,8 @@ class MenuHandler:
 
     def detect_menu_type(self, menu_hwnd: int) -> MenuType:
         """현재 컨텍스트에서 메뉴 종류 판별."""
-        from ..window_finder import is_kakaotalk_chat_window, MAIN_WINDOW_TITLE
+        from ..window_finder import is_kakaotalk_chat_window
+        from ..config import KAKAOTALK_WINDOW_TITLE
 
         fg_hwnd = win32gui.GetForegroundWindow()
         if not fg_hwnd:
@@ -125,11 +131,11 @@ class MenuHandler:
         # 2. 메인 창에서 열린 메뉴 → 탭 확인
         try:
             title = win32gui.GetWindowText(fg_hwnd)
-            if title == MAIN_WINDOW_TITLE:
+            if title == KAKAOTALK_WINDOW_TITLE:
                 active_tab = self._get_active_tab(fg_hwnd)
-                if active_tab == "친구":
+                if active_tab == KAKAO_TAB_FRIENDS:
                     return MenuType.FRIEND_TAB_ITEM
-                elif active_tab == "채팅":
+                elif active_tab == KAKAO_TAB_CHATS:
                     return MenuType.CHAT_TAB_ITEM
         except Exception:
             pass
@@ -146,8 +152,8 @@ class MenuHandler:
                 return None
 
             # TabControl 찾기 (searchDepth 제한)
-            tab_control = main_control.TabControl(searchDepth=4)
-            if not tab_control.Exists(maxSearchSeconds=0.2):
+            tab_control = main_control.TabControl(searchDepth=SEARCH_DEPTH_TAB_CONTROL)
+            if not tab_control.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_FALLBACK):
                 return None
 
             # 선택된 TabItem 찾기
@@ -210,7 +216,7 @@ class MenuHandler:
         with self._lock:
             return self._menu_exit_time
 
-    def is_bridging_period(self, threshold: float = 0.2) -> bool:
+    def is_bridging_period(self, threshold: float = TIMING_MENU_BRIDGING_THRESHOLD) -> bool:
         """메뉴 종료 직후 브리징 기간인지."""
         with self._lock:
             return time.time() - self._menu_exit_time < threshold
@@ -229,7 +235,7 @@ class MenuHandler:
                 return True
 
             # 조건 2: automationID == 'KakaoTalk Menu'
-            if parent.AutomationId == 'KakaoTalk Menu':
+            if parent.AutomationId == KAKAO_MENU_AUTOMATION_ID:
                 return True
 
             # 조건 3: ControlType == MenuControl (POPUPMENU)
@@ -241,20 +247,10 @@ class MenuHandler:
             return False
 
     def get_menu_item_name(self, control) -> Optional[str]:
-        """MenuItemControl 이름 추출. MSAA 우선 (KAKAO-002 대응)."""
+        """MenuItemControl 이름 추출."""
         try:
             name = control.Name or ""
-
-            # UIA Name이 있으면 그대로 사용
-            if name and name != "Menu Item":
-                return name
-
-            # MSAA fallback (KAKAO-002: UIA Name이 거의 항상 비어있음)
-            actual_name = get_element_name(control)
-            if actual_name:
-                return actual_name
-
-            return None
+            return name if name and name != KAKAO_MENU_ITEM_PLACEHOLDER else None
         except Exception:
             return None
 
@@ -278,10 +274,10 @@ class MenuHandler:
         if not self.is_kakaotalk_menu_item(control):
             return False
 
-        # 이름 추출 (MSAA fallback 적용)
+        # 이름 추출
         actual_name = self.get_menu_item_name(control)
         if not actual_name:
-            log.trace("[SKIP] MenuItemControl: MSAA fallback 후에도 이름 없음")
+            log.trace("[SKIP] MenuItemControl: 이름 없음")
             return False
 
         # 중복 체크

@@ -9,9 +9,16 @@ from dataclasses import dataclass
 
 import uiautomation as auto
 
-from ..config import TIMING_EVENT_PUMP_INTERVAL
+from ..config import (
+    TIMING_EVENT_PUMP_INTERVAL,
+    TIMING_FOCUS_DEBOUNCE_SECS,
+    TIMING_COALESCER_FLUSH_SECS,
+    TIMING_THREAD_JOIN_TIMEOUT,
+    KAKAO_MENU_ITEM_PLACEHOLDER,
+    CHROME_CLASS_PREFIX,
+)
 from .debug import get_logger
-from ..window_finder import filter_kakaotalk_hwnd
+from ..window_finder import filter_kakaotalk_hwnd, is_kakaotalk_hwnd_cached
 from .event_coalescer import EventCoalescer
 from .com_utils import com_thread
 
@@ -30,6 +37,7 @@ try:
         UIA_NamePropertyId,
         UIA_ClassNamePropertyId,
         UIA_RuntimeIdPropertyId,
+        UIA_NativeWindowHandlePropertyId,
     )
     HAS_CACHE_PROPS = True
 except ImportError:
@@ -38,15 +46,23 @@ except ImportError:
     UIA_NamePropertyId = None
     UIA_ClassNamePropertyId = None
     UIA_RuntimeIdPropertyId = None
+    UIA_NativeWindowHandlePropertyId = None
 
 log = get_logger("UIA_Focus")
+
+# 컨테이너 타입: 개별 아이템(ListItem, MenuItem)만 통과시키고 부모 컨테이너는 차단
+_CONTAINER_CONTROL_TYPES = frozenset({
+    'ListControl',
+    'MenuControl',
+    'MenuBarControl',
+})
 
 
 @dataclass
 class FocusEvent:
     control: auto.Control
     timestamp: float
-    source: str  # "event" or "polling"
+    source: str  # "event", "polling", or "selection" (ElementSelected)
 
 
 # FocusChangedHandler는 uia_events.py에서 import
@@ -87,10 +103,10 @@ class FocusMonitor:
         self._callback = on_focus_changed
         self._running = True
 
-        # Phase 2: EventCoalescer 시작 (20ms 배치 처리)
+        # Phase 2: EventCoalescer 시작
         self._coalescer = EventCoalescer(
             flush_callback=self._process_focus_event,
-            flush_interval=0.02  # 20ms
+            flush_interval=TIMING_COALESCER_FLUSH_SECS
         )
 
         success = self._start_event_based()
@@ -110,7 +126,7 @@ class FocusMonitor:
             self._coalescer = None
 
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=TIMING_THREAD_JOIN_TIMEOUT)
 
         log.debug("FocusMonitor stopped")
 
@@ -152,7 +168,8 @@ class FocusMonitor:
                         cache_request.AddProperty(UIA_NamePropertyId)
                         cache_request.AddProperty(UIA_ClassNamePropertyId)
                         cache_request.AddProperty(UIA_RuntimeIdPropertyId)
-                        log.debug("FocusChanged CacheRequest created (4 properties)")
+                        cache_request.AddProperty(UIA_NativeWindowHandlePropertyId)
+                        log.debug("FocusChanged CacheRequest created (5 properties)")
                     except Exception as e:
                         log.debug(f"CacheRequest creation failed: {e}")
                         cache_request = None
@@ -198,28 +215,26 @@ class FocusMonitor:
             return
 
         try:
-            # 디버그: 모든 이벤트 진입 로그
-            control_type_id = None
-            try:
-                control_type_id = sender.CurrentControlType
-            except Exception:
-                pass
-            log.trace(f"[RAW] focus event: type_id={control_type_id}")
-
-            # 1. 시간 기반 디바운싱 (30ms) - Phase 1에서 효과 입증
+            # 1. 시간 기반 디바운싱 - Phase 1에서 효과 입증
             now = time.time()
-            if now - self._last_event_time < 0.03:
-                log.trace("[SKIP] debounce 30ms")
+            if now - self._last_event_time < TIMING_FOCUS_DEBOUNCE_SECS:
                 return
             self._last_event_time = now
 
-            # 2. 창 핸들 확인 - 카카오톡 창 외 즉시 무시
-            # filter_kakaotalk_hwnd: 직접 hwnd → 포그라운드 → 캐시 순으로 폴백
-            native_hwnd = sender.CurrentNativeWindowHandle
-            hwnd = filter_kakaotalk_hwnd(sender)
-            if not hwnd:
-                log.trace(f"[SKIP] hwnd filter: native={native_hwnd}")
-                return
+            # 2. hwnd 필터 - CachedNativeWindowHandle + dict lookup
+            # 79%의 외부 앱 이벤트를 COM 왕복 없이 즉시 버림
+            native_hwnd = self._get_native_hwnd(sender)
+            if native_hwnd:
+                # 빠른 경로: hwnd 있으면 캐시로 카카오톡 판별
+                if not is_kakaotalk_hwnd_cached(native_hwnd):
+                    log.trace(f"[SKIP] hwnd filter: native={native_hwnd}")
+                    return
+            else:
+                # 느린 경로: hwnd 없으면 기존 폴백 (포그라운드 → 캐시)
+                hwnd = filter_kakaotalk_hwnd(sender)
+                if not hwnd:
+                    log.trace("[SKIP] hwnd filter: native=None")
+                    return
 
             # 3. RuntimeID 기반 중복 체크 (CompareElements 대체)
             try:
@@ -239,23 +254,29 @@ class FocusMonitor:
                 return
 
             # 5. Chrome_* 요소 무시 (광고 웹뷰)
-            if (focused.ClassName or "").startswith("Chrome_"):
+            if (focused.ClassName or "").startswith(CHROME_CLASS_PREFIX):
                 log.trace("[SKIP] Chrome_* element")
                 return
 
-            # 6. MenuItemControl + "Menu Item" 무시 (아직 안 그려진 메뉴)
+            # 6. 컨테이너 타입 무시 (개별 아이템만 통과)
+            control_type = focused.ControlTypeName
+            if control_type in _CONTAINER_CONTROL_TYPES:
+                log.trace(f"[SKIP] container: {control_type}: {(focused.Name or '')[:20]}")
+                return
+
+            # 7. MenuItemControl + placeholder 무시 (아직 안 그려진 메뉴)
             # 콜백 호출 자체를 줄여서 CPU 절약
             name = focused.Name or ""
-            if focused.ControlTypeName == "MenuItemControl" and (not name or name == "Menu Item"):
+            if control_type == "MenuItemControl" and (not name or name == KAKAO_MENU_ITEM_PLACEHOLDER):
                 return  # 로그도 안 찍고 완전 무시
 
-            log.trace(f"[PASS] {focused.ControlTypeName}: {name[:20]}")
+            log.trace(f"[PASS] {control_type}: {name[:20]}")
 
-            # 7. FocusEvent 생성 + 즉시 처리 (NVDA gainFocus 패턴)
+            # 8. FocusEvent 생성 + 즉시 처리 (NVDA gainFocus 패턴)
             event = FocusEvent(
                 control=focused,
                 timestamp=now,
-                source="event"
+                source="event",
             )
 
             # 포커스 이벤트는 즉시 처리 (NVDA gainFocus 패턴)
@@ -287,35 +308,25 @@ class FocusMonitor:
     def is_running(self) -> bool:
         return self._running
 
+    def _get_native_hwnd(self, sender) -> Optional[int]:
+        """CachedNativeWindowHandle 우선, CurrentNativeWindowHandle 폴백."""
+        try:
+            hwnd = sender.CachedNativeWindowHandle
+            if hwnd:
+                return hwnd
+        except Exception:
+            pass
+        try:
+            hwnd = sender.CurrentNativeWindowHandle
+            if hwnd:
+                return hwnd
+        except Exception:
+            pass
+        return None
+
     def get_stats(self) -> dict:
         return {
             "mode": "event",
             "running": self._running,
         }
 
-
-# =============================================================================
-# 글로벌 모니터 인스턴스
-# =============================================================================
-
-# 싱글톤 인스턴스 (필요 시 생성)
-_focus_monitor: Optional[FocusMonitor] = None
-_focus_monitor_lock = threading.Lock()
-
-
-def get_focus_monitor() -> FocusMonitor:
-    global _focus_monitor
-    if _focus_monitor is None:
-        with _focus_monitor_lock:
-            if _focus_monitor is None:  # Double-check
-                _focus_monitor = FocusMonitor()
-    return _focus_monitor
-
-
-def start_focus_monitoring(callback: Callable[[FocusEvent], None]) -> bool:
-    return get_focus_monitor().start(callback)
-
-
-def stop_focus_monitoring() -> None:
-    if _focus_monitor:
-        _focus_monitor.stop()

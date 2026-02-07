@@ -65,30 +65,35 @@ src/kakaotalk_a11y_client/
 │   ├── tray_icon.py        # 시스템 트레이 아이콘
 │   ├── settings_dialog.py  # 설정 다이얼로그 (탭 기반)
 │   ├── status_panel.py     # 상태 표시 패널
-│   ├── hotkey_panel.py     # 핫키 설정 패널 (+ re-export)
+│   ├── hotkey_panel.py     # 핫키 설정 패널 (데이터 기반 일반화)
 │   ├── hotkey_dialog.py    # 핫키 변경 다이얼로그
-│   └── debug_hotkey_panel.py # 디버그 단축키 설정 패널
-├── infrastructure/         # 인프라 어댑터 (UIA/음성 추상화)
-│   ├── uia_adapter.py      # UIA 직접 호출 래핑
-│   └── speak_callback.py   # 음성 출력 콜백 팩토리
+│   └── update_dialogs.py   # 업데이트 알림 다이얼로그
+├── infrastructure/         # 인프라 어댑터 (UIA 추상화)
+│   └── uia_adapter.py      # UIA 직접 호출 래핑
+├── message_actions/        # 메시지 액션 (복사/리뷰 등)
+│   ├── __init__.py         # 패키지 초기화
+│   ├── base.py             # MessageAction 추상 클래스
+│   ├── copy_action.py      # C키 메시지 복사
+│   ├── extractor.py        # 메시지 텍스트 추출
+│   └── manager.py          # 액션 등록/실행 관리
 ├── navigation/
 │   ├── chat_room.py        # 채팅방 메시지 탐색
 │   └── message_monitor.py  # 새 메시지 자동 읽기
 └── utils/
     ├── uia_utils.py        # UIA 탐색 유틸리티 (+ re-export)
-    ├── uia_reliability.py  # UIA 신뢰도 판단 (클래스별 UIA/MSAA 선택)
     ├── uia_exceptions.py   # COMError 안전 래퍼 (safe_uia_call)
     ├── uia_tree_dump.py    # UIA 트리 덤프/비교 유틸리티
     ├── uia_cache.py        # UIA 캐싱
     ├── uia_events.py       # UIA COM 초기화 (+ re-export)
-    ├── uia_focus_handler.py # FocusChanged 이벤트 모니터
+    ├── uia_focus_handler.py # FocusChanged/ElementSelected 이벤트 모니터
     ├── uia_message_monitor.py # StructureChanged 메시지 모니터
     ├── uia_cache_request.py # UIA CacheRequest 관리
-    ├── uia_workarounds.py  # 카카오톡 UIA 우회
     ├── menu_handler.py     # 컨텍스트 메뉴 감지/상태/처리 통합
-    ├── beep.py             # 테스트/디버그용 비프음
+    ├── clipboard.py        # 클립보드 유틸리티
+    ├── event_coalescer.py  # NVDA 스타일 이벤트 배칭/중복 제거
     ├── debug.py            # 로깅
     ├── debug_config.py     # 디버그 설정 관리
+    ├── debug_setup.py      # 디버그 초기화 (이벤트 모니터 자동 시작)
     ├── debug_tools.py      # 디버그 도구 (덤프, 리포트)
     ├── debug_commands.py   # 디버그 단축키 등록
     ├── profiler.py         # 성능 측정
@@ -105,35 +110,41 @@ src/kakaotalk_a11y_client/
 
 ### 파일별 책임
 
-| 파일 | 책임 | 라인 수 |
-|------|------|--------|
-| main.py | 전체 플로우 조율, 컴포넌트 생명주기 | ~400 |
-| focus_monitor.py | 포커스 모니터링 서비스 (FocusChanged 이벤트) | ~420 |
-| mode_manager.py | 모드 전환 관리 (Navigation/ContextMenu) | ~150 |
-| hotkeys.py | 전역 핫키 등록/해제 (RegisterHotKey API) | ~265 |
-| config.py | 타이밍/캐시/성능 상수 관리 | ~80 |
-| accessibility.py | 스크린 리더/TTS 통합 인터페이스 | ~85 |
-| window_finder.py | 카카오톡 창 탐색 및 검증 | ~400 |
-| chat_room.py | 채팅방 메시지 UIA 탐색 | ~145 |
-| message_monitor.py | 새 메시지 이벤트 기반 자동 읽기 | ~270 |
-| **gui/** | | |
-| hotkey_panel.py | 핫키 설정 패널 (+ re-export) | ~245 |
-| hotkey_dialog.py | 핫키 변경 다이얼로그 | ~185 |
-| debug_hotkey_panel.py | 디버그 단축키 설정 패널 | ~240 |
-| **infrastructure/** | | |
-| uia_adapter.py | UIA 직접 호출 래핑 (의존성 역전) | ~205 |
-| speak_callback.py | 음성 출력 콜백 팩토리 | ~35 |
-| **utils/** | | |
-| uia_utils.py | UIA 탐색 유틸리티 (+ re-export) | ~316 |
-| uia_reliability.py | UIA 신뢰도 판단 (클래스별 선택) | ~70 |
-| uia_exceptions.py | COMError 안전 래퍼 | ~75 |
-| uia_tree_dump.py | UIA 트리 덤프/비교 | ~326 |
-| uia_cache.py | UIA 캐싱 (메시지 목록용) | ~215 |
-| uia_events.py | UIA COM 초기화 (+ re-export) | ~134 |
-| uia_focus_handler.py | FocusChanged 이벤트 모니터 | ~254 |
-| uia_message_monitor.py | StructureChanged 메시지 모니터 | ~350 |
-| uia_workarounds.py | 카카오톡 특수 UIA 우회 | ~190 |
-| menu_handler.py | 메뉴 감지/상태/처리 통합 (MenuHandler) | ~308 |
+| 파일 | 책임 |
+|------|------|
+| main.py | 전체 플로우 조율, 컴포넌트 생명주기 |
+| focus_monitor.py | 포커스 모니터링 서비스 (이벤트 디스패치 테이블 기반) |
+| mode_manager.py | 모드 전환 관리 (Navigation/ContextMenu) |
+| hotkeys.py | 전역 핫키 등록/해제 (RegisterHotKey API) |
+| config.py | 타이밍/캐시/성능 상수 관리 |
+| accessibility.py | 스크린 리더/TTS 통합 인터페이스 |
+| window_finder.py | 카카오톡 창 탐색 및 검증 (EVA_* 접두사 기반) |
+| **message_actions/** | |
+| base.py | MessageAction 추상 클래스 |
+| copy_action.py | C키 메시지 복사 |
+| extractor.py | 메시지 텍스트 추출 (UIA) |
+| manager.py | 액션 등록/실행 관리 |
+| **navigation/** | |
+| chat_room.py | 채팅방 메시지 UIA 탐색 |
+| message_monitor.py | 새 메시지 이벤트 기반 자동 읽기 |
+| **gui/** | |
+| hotkey_panel.py | 핫키 설정 패널 (데이터 기반 일반화) |
+| hotkey_dialog.py | 핫키 변경 다이얼로그 |
+| update_dialogs.py | 업데이트 알림 다이얼로그 |
+| **infrastructure/** | |
+| uia_adapter.py | UIA 직접 호출 래핑 (의존성 역전) |
+| **utils/** | |
+| uia_utils.py | UIA 탐색 유틸리티 (+ re-export) |
+| uia_exceptions.py | COMError 안전 래퍼 |
+| uia_tree_dump.py | UIA 트리 덤프/비교 |
+| uia_cache.py | UIA 캐싱 (메시지 목록용) |
+| uia_events.py | UIA COM 초기화 (+ re-export) |
+| uia_focus_handler.py | FocusChanged/ElementSelected 이벤트 모니터 |
+| uia_message_monitor.py | StructureChanged 메시지 모니터 |
+| menu_handler.py | 메뉴 감지/상태/처리 통합 (MenuHandler) |
+| clipboard.py | 클립보드 유틸리티 |
+| event_coalescer.py | NVDA 스타일 이벤트 배칭/중복 제거 |
+| debug_setup.py | 디버그 초기화 (이벤트 모니터 자동 시작) |
 
 ### 아키텍처 평가 지표
 
@@ -152,8 +163,9 @@ src/kakaotalk_a11y_client/
                    ↓
 ┌──────────────────┴──────────────────────────┐
 │           Domain                             │
-│  navigation/ │ detector.py │ hotkeys.py     │
-│  clicker.py  │ settings.py                  │
+│  navigation/ │ message_actions/              │
+│  detector.py │ hotkeys.py │ settings.py     │
+│  clicker.py  │ mode_manager.py              │
 └──────────────────┬──────────────────────────┘
                    ↓
 ┌──────────────────┴──────────────────────────┐
@@ -164,19 +176,20 @@ src/kakaotalk_a11y_client/
 └─────────────────────────────────────────────┘
 ```
 
-**모듈별 아키텍처 준수율** (2026-01 분석 기준)
+**모듈별 아키텍처 준수율** (2026-01 분석 → 2026-02 리팩터링 반영)
 
 | 모듈 | 준수율 | 비고 |
 |------|--------|------|
 | utils/uia_cache.py | 92% | 모범 사례 (NVDA 패턴) |
 | utils/uia_utils.py | 89% | 모범 사례 (safe_uia_call) |
+| message_actions/ | 88% | v0.7.0 신규 (추상 클래스 기반) |
 | accessibility.py | 88% | 양호 |
 | settings.py | 86% | 양호 |
+| focus_monitor.py | 85% | 개선됨 (테이블 기반 디스패치, 싱글톤 통일) |
 | navigation/chat_room.py | 81% | 양호 |
 | hotkeys.py | 78% | 양호 |
-| utils/uia_events.py | 75% | 개선 필요 |
+| main.py | 75% | 개선됨 (디버그 초기화 분리, 싱글톤 통일) |
 | window_finder.py | 72% | 개선 필요 |
-| main.py | 64% | 우선 개선 대상 (책임 과다) |
 
 **의존성 방향**
 - 단방향 하향식 (GUI → Application → Domain → Infrastructure)
@@ -529,9 +542,10 @@ RegisterHotKey API를 사용합니다.
 - 현재: FocusChanged 이벤트 기반 + 폴링 보조 (메뉴/채팅방 감지용)
 
 **이벤트 기반 (ListItem/TabItem 읽기):**
-- UIA `AddFocusChangedEventHandler()` 사용
+- UIA `AddFocusChangedEventHandler()` + `ElementSelected` 이벤트 사용
 - NVDA 패턴 적용: `compareElements`로 중복 필터링
-- 비카카오톡 창 필터링 (hwnd 체크)
+- 비카카오톡 창 필터링 (hwnd 판별 캐시)
+- 이벤트 디스패치 테이블 기반 처리
 
 **폴링 보조 (메뉴/채팅방 감지):**
 - EVA_Menu 창 감지 → 컨텍스트 메뉴 모드 진입
@@ -601,7 +615,13 @@ def _on_structure_changed(self, change_type):
 
 1. ~~**context_menu.py 단순화**~~ → 제거 완료 (NVDA 네이티브 동작에 위임)
 2. ~~**메인 창 탐색**~~ → 구현 완료
-   - 친구 목록, 채팅 목록 탐색 (포커스 모니터의 ListItemControl 처리, `main.py:285-295`)
+   - 친구 목록, 채팅 목록 탐색 (포커스 모니터의 ListItemControl 처리)
+3. ~~**메시지 액션 시스템**~~ → v0.7.0 구현 (message_actions/ 패키지)
+   - C키 메시지 복사, 추상 클래스 기반 확장 구조
+4. ~~**싱글톤 패턴 통일**~~ → v0.7.0 리팩터링
+5. ~~**MSAA fallback 제거**~~ → v0.7.0 (UIA 전용)
+6. ~~**ElementSelected 이벤트**~~ → v0.7.0 구현
+7. ~~**이벤트 디스패치 테이블화**~~ → v0.7.0 리팩터링
 
 ### 단기 (성능)
 

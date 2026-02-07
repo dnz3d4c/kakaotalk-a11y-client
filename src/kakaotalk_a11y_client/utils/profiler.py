@@ -26,6 +26,23 @@ log_dir: Optional[Path] = None
 _profiler_initialized = False
 
 
+def _cleanup_profile_logs(directory: Path, max_files: int = None):
+    """오래된 profile_*.log 파일 정리."""
+    try:
+        from .debug_config import debug_config
+        if max_files is None:
+            max_files = debug_config.max_profile_files
+        profile_files = sorted(
+            directory.glob('profile_*.log'),
+            key=lambda p: p.stat().st_mtime
+        )
+        if len(profile_files) > max_files:
+            for f in profile_files[:-max_files]:
+                f.unlink()
+    except Exception:
+        pass
+
+
 def init_profiler(enabled: bool = None) -> None:
     """main에서 호출. enabled=None이면 환경변수 DEBUG 체크."""
     global _debug_mode, log_dir, _profiler_initialized
@@ -44,6 +61,7 @@ def init_profiler(enabled: bool = None) -> None:
         profile_logger.setLevel(logging.DEBUG)
         log_dir = _get_project_root() / "logs"
         log_dir.mkdir(exist_ok=True)
+        _cleanup_profile_logs(log_dir)
         log_file = log_dir / f'profile_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(logging.Formatter('%(asctime)s | %(message)s'))
@@ -77,20 +95,9 @@ class ProfileMetrics:
 
 
 class UIAProfiler:
-    """싱글톤 프로파일러. measure()로 시간 측정, 100ms 초과 시 경고."""
-
-    _instance: Optional['UIAProfiler'] = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """프로파일러. measure()로 시간 측정, 100ms 초과 시 경고."""
 
     def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
         self.metrics: Dict[str, ProfileMetrics] = {}
         self.enabled = True
         self.slow_threshold_ms = PERF_SLOW_THRESHOLD_MS
@@ -340,7 +347,3 @@ def profile(operation: str = None):
     return decorator
 
 
-def log_slow(message: str, elapsed_ms: float, threshold_ms: float = PERF_SLOW_THRESHOLD_MS):
-    """threshold 초과 시에만 로깅."""
-    if elapsed_ms > threshold_ms:
-        profile_logger.warning(f"{message}: {elapsed_ms:.1f}ms (threshold: {threshold_ms}ms)")

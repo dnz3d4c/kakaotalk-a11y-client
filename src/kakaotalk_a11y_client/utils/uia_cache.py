@@ -134,11 +134,3 @@ class UIACache:
 message_list_cache = UIACache(default_ttl=CACHE_MESSAGE_LIST_TTL)
 
 
-def clear_all_caches() -> None:
-    message_list_cache.clear()
-    profile_logger.info("모든 UIA 캐시 초기화됨")
-
-
-def log_all_cache_stats() -> None:
-    profile_logger.info("=== UIA 캐시 통계 ===")
-    profile_logger.info(f"message_list_cache: {message_list_cache.get_stats()}")

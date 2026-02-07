@@ -1,43 +1,23 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2025-2026 dnz3d4c
-"""UIA 탐색 유틸리티. 필터링, 재귀 탐색, 포커스 확인."""
+"""UIA 탐색 유틸리티. 필터링, 재귀 탐색."""
 
 import time
 from typing import Callable, List, Optional, Tuple
 
 import uiautomation as auto
 
-from ..config import FILTER_MAX_CONSECUTIVE_EMPTY
+from ..config import FILTER_MAX_CONSECUTIVE_EMPTY, KAKAO_LIST_CONTROL_CLASS, KAKAO_MESSAGE_LIST_NAME
 from .debug import get_logger
 from .profiler import profiler, profile_logger
 
 # =============================================================================
-# 하위 호환성을 위한 re-export
+# re-export (실제 사용되는 것만)
 # =============================================================================
 
-from .uia_reliability import (
-    KAKAO_GOOD_UIA_CLASSES,
-    KAKAO_BAD_UIA_CLASSES,
-    KAKAO_IGNORE_PATTERNS,
-    is_good_uia_element,
-    should_use_uia_for_window,
-)
+from .uia_exceptions import safe_uia_call
 
-from .uia_exceptions import (
-    safe_uia_call,
-    handle_uia_errors,
-    get_children_safe,
-    get_focused_safe,
-    get_parent_safe,
-)
-
-from .uia_tree_dump import (
-    dump_tree,
-    dump_element_details,
-    dump_tree_json,
-    compare_trees,
-    format_tree_diff,
-)
+from .uia_tree_dump import dump_tree_json
 
 log = get_logger("UIA")
 
@@ -157,20 +137,6 @@ class SmartListFilter:
 smart_filter = SmartListFilter()
 
 
-def get_children_filtered(
-    parent: auto.Control,
-    max_items: int = 100,
-    control_type: Optional[int] = None
-) -> List[auto.Control]:
-    """SmartListFilter로 필터링된 자식 요소."""
-    items = smart_filter.filter_list_items(parent, max_items)
-
-    if control_type:
-        items = [item for item in items if item.ControlType == control_type]
-
-    return items
-
-
 # =============================================================================
 # 재귀 탐색
 # =============================================================================
@@ -184,7 +150,7 @@ def find_all_descendants(
     results = []
 
     def _traverse(el, depth):
-        if depth >= max_depth:  # >= 로 변경하여 조기 종료 (불필요한 재귀 호출 방지)
+        if depth >= max_depth:
             return
         try:
             children = el.GetChildren()
@@ -197,29 +163,6 @@ def find_all_descendants(
 
     _traverse(element, 0)
     return results
-
-
-def find_first_descendant(
-    element: auto.Control,
-    condition_func: Callable[[auto.Control], bool],
-    max_depth: int = 10
-) -> Optional[auto.Control]:
-    """조건 충족하는 첫 자손 반환."""
-    def _traverse(el, depth):
-        if depth >= max_depth:  # >= 로 변경하여 조기 종료
-            return None
-        try:
-            for child in el.GetChildren():
-                if condition_func(child):
-                    return child
-                result = _traverse(child, depth + 1)
-                if result:
-                    return result
-        except Exception:
-            pass
-        return None
-
-    return _traverse(element, 0)
 
 
 def get_children_recursive(
@@ -258,59 +201,37 @@ def get_children_recursive(
 
 
 # =============================================================================
-# 포커스 확인
+# 메시지 목록 포커스 확인
 # =============================================================================
 
-def is_focus_in_control(parent_control: auto.Control) -> bool:
-    """현재 포커스가 parent_control의 자손인지 확인."""
-    if not parent_control:
-        return False
-
+def is_focus_in_message_list(element: Optional[auto.Control] = None) -> bool:
+    """요소가 메시지 목록 내부인지 확인. element=None이면 현재 포커스 조회."""
     try:
-        focused = auto.GetFocusedControl()
-        if not focused:
+        current = element if element else auto.GetFocusedControl()
+        if not current:
+            log.debug("is_focus_in_message_list: element is None")
             return False
 
-        # 포커스된 컨트롤이 부모와 같으면 True
-        if focused == parent_control:
-            return True
-
-        # 부모 체인을 따라 올라가며 확인 (대부분 3~5단계에서 매칭)
-        current = focused
-        for _ in range(12):  # 20→12로 축소
-            parent = current.GetParentControl()
-            if not parent:
-                break
-
-            if parent == parent_control:
-                return True
-
-            current = parent
-
-        return False
-
-    except Exception:
-        return False
-
-
-def is_focus_in_message_list() -> bool:
-    """포커스가 메시지 목록 내부인지 확인. EVA_VH_ListControl_Dblclk + Name='메시지' 매칭."""
-    try:
-        focused = auto.GetFocusedControl()
-        if not focused:
-            return False
-
-        current = focused
-        for _ in range(12):  # 20→12로 축소 (대부분 3~5단계에서 매칭)
+        for i in range(12):  # 부모 12단계까지 탐색
             if not current:
                 break
-            # ClassName AND Name 둘 다 매칭
-            if (current.ClassName == "EVA_VH_ListControl_Dblclk"
-                    and current.Name == "메시지"):
+            # 디버그: 각 단계별 ClassName, Name 출력
+            try:
+                cls_name = current.ClassName
+                name = current.Name
+                log.trace(f"is_focus_in_message_list: depth={i}, ClassName={cls_name}, Name={name[:20] if name else None}")
+            except Exception:
+                pass
+
+            if (current.ClassName == KAKAO_LIST_CONTROL_CLASS
+                    and current.Name == KAKAO_MESSAGE_LIST_NAME):
+                log.debug(f"is_focus_in_message_list: found at depth={i}")
                 return True
             current = current.GetParentControl()
 
+        log.debug("is_focus_in_message_list: not found in 12 levels")
         return False
 
-    except Exception:
+    except Exception as e:
+        log.debug(f"is_focus_in_message_list: exception {e}")
         return False

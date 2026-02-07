@@ -8,7 +8,6 @@ from .tray_icon import TrayIcon
 from .settings_dialog import SettingsDialog
 from .status_panel import StatusPanel
 from .hotkey_panel import HotkeyPanel
-from .debug_hotkey_panel import DebugHotkeyPanel
 
 __all__ = [
     "KakaoA11yApp",
@@ -17,5 +16,4 @@ __all__ = [
     "SettingsDialog",
     "StatusPanel",
     "HotkeyPanel",
-    "DebugHotkeyPanel",
 ]

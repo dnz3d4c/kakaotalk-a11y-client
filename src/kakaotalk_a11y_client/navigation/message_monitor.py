@@ -2,17 +2,18 @@
 # Copyright 2025-2026 dnz3d4c
 """새 메시지 자동 읽기. UIA StructureChanged 이벤트 기반."""
 
-from typing import Optional, TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING
 
 from ..accessibility import speak
 from ..config import (
+    KAKAO_MESSAGE_LIST_NAME,
     SEARCH_DEPTH_MESSAGE_LIST,
     SEARCH_MAX_SECONDS_LIST,
     SEARCH_MAX_SECONDS_FALLBACK,
 )
 from ..utils.debug import get_logger
 from ..utils.uia_utils import get_children_recursive
-from ..utils.uia_events import MessageListMonitor, MessageEvent
+from ..utils.uia_events import MessageListMonitor, MessageEvent, FocusEvent
 
 if TYPE_CHECKING:
     from .chat_room import ChatRoomNavigator
@@ -23,8 +24,13 @@ log = get_logger("MessageMonitor")
 class MessageMonitor:
     """새 메시지 모니터링. UIA 이벤트 핸들러 기반."""
 
-    def __init__(self, chat_navigator: "ChatRoomNavigator"):
+    def __init__(
+        self,
+        chat_navigator: "ChatRoomNavigator",
+        on_selection_changed: Optional[Callable[[FocusEvent], None]] = None,
+    ):
         self.chat_navigator = chat_navigator
+        self._selection_callback = on_selection_changed
 
         # 실행 상태
         self._running = False
@@ -34,6 +40,10 @@ class MessageMonitor:
         self._list_monitor: Optional[MessageListMonitor] = None
 
         log.debug("MessageMonitor initialized")
+
+    def set_selection_callback(self, callback: Callable[[FocusEvent], None]) -> None:
+        """ElementSelected → FocusEvent 콜백 설정. start() 전에 호출."""
+        self._selection_callback = callback
 
     def start(self, hwnd: int) -> bool:
         """이벤트 모니터 시작. 이미 실행 중이면 True 반환."""
@@ -100,7 +110,7 @@ class MessageMonitor:
             if not msg_list:
                 # 캐시 없으면 검색 (폴백)
                 msg_list = self.chat_navigator.chat_control.ListControl(
-                    Name="메시지",
+                    Name=KAKAO_MESSAGE_LIST_NAME,
                     searchDepth=SEARCH_DEPTH_MESSAGE_LIST
                 )
                 if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_LIST):
@@ -108,7 +118,10 @@ class MessageMonitor:
                     return False
 
             # MessageListMonitor 생성 및 시작
-            self._list_monitor = MessageListMonitor(list_control=msg_list)
+            self._list_monitor = MessageListMonitor(
+                list_control=msg_list,
+                on_selection_changed=self._selection_callback,
+            )
             self._list_monitor.start(on_message_changed=self._on_message_event)
             log.info("MessageListMonitor started")
             return True
@@ -148,7 +161,7 @@ class MessageMonitor:
             msg_list = self.chat_navigator.list_control
             if not msg_list:
                 msg_list = self.chat_navigator.chat_control.ListControl(
-                    Name="메시지",
+                    Name=KAKAO_MESSAGE_LIST_NAME,
                     searchDepth=SEARCH_DEPTH_MESSAGE_LIST
                 )
                 if not msg_list.Exists(maxSearchSeconds=SEARCH_MAX_SECONDS_FALLBACK):

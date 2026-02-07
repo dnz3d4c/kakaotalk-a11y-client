@@ -2,6 +2,7 @@
 # Copyright 2025-2026 dnz3d4c
 """카카오톡 창 찾기 모듈"""
 
+import threading
 import time
 import win32gui
 import win32con
@@ -9,8 +10,11 @@ from typing import Optional
 from dataclasses import dataclass
 
 from .config import (
-    SEARCH_DEPTH_MESSAGE_LIST_CHECK,
-    SEARCH_DEPTH_CHAT_LIST,
+    KAKAOTALK_WINDOW_TITLE,
+    CHROME_CLASS_PREFIX,
+    TIMING_HWND_CACHE_TTL,
+    CACHE_HWND_CLASS_MAX_SIZE,
+    CACHE_HWND_CLASS_EVICT_COUNT,
 )
 
 # 로거는 함수 내부에서 lazy import (순환 import 방지)
@@ -26,15 +30,7 @@ def _get_log():
 
 # 카카오톡 창 클래스명 패턴
 KAKAOTALK_WINDOW_CLASS = "EVA_Window_Dblclk"
-KAKAOTALK_CHILD_CLASS = "EVA_ChildWindow"
-KAKAOTALK_LIST_CLASS = "EVA_VH_ListControl_Dblclk"
 KAKAOTALK_MENU_CLASS = "EVA_Menu"  # 컨텍스트 메뉴
-
-# 창 제목 패턴 (win32gui 기준)
-# 메인 창: "카카오톡" (정확히 일치)
-# 채팅방 창: 상대방 이름 (예: "홍길동")
-# 기타 창: 빈 제목, "KakaoTalk Dialog", 배너 등
-MAIN_WINDOW_TITLE = "카카오톡"  # 정확히 일치하는 것만
 EXCLUDE_TITLES = ["", "KakaoTalk Dialog", "WebStoreBanner Dialog"]  # 제외할 제목
 
 
@@ -82,64 +78,6 @@ def check_uia_available() -> dict:
     return result
 
 
-def check_uia_accessibility() -> dict:
-    """카카오톡 UIA 접근 가능 여부. 실행 여부, 채팅방 여부 포함."""
-    result = {
-        "accessible": False,
-        "kakaotalk_running": False,
-        "chat_window_found": False,
-        "message": "",
-    }
-
-    # 1. 카카오톡 창 찾기
-    windows = _enumerate_kakaotalk_windows()
-    if not windows:
-        result["message"] = "카카오톡이 실행되지 않았습니다"
-        return result
-
-    result["kakaotalk_running"] = True
-
-    # 2. 채팅방 창 찾기
-    chat_windows = [w for w in windows if w.is_chat]
-    if not chat_windows:
-        result["message"] = "열린 채팅방이 없습니다"
-        result["accessible"] = True  # 카카오톡은 접근 가능
-        return result
-
-    result["chat_window_found"] = True
-
-    # 3. UIA로 메시지 목록 접근 가능 여부 확인
-    try:
-        import uiautomation as auto
-
-        chat_hwnd = chat_windows[0].hwnd
-        chat_control = auto.ControlFromHandle(chat_hwnd)
-
-        if chat_control:
-            # 메시지 ListControl 찾기
-            msg_list = chat_control.ListControl(
-                ClassName=KAKAOTALK_LIST_CLASS, searchDepth=SEARCH_DEPTH_MESSAGE_LIST_CHECK
-            )
-            if msg_list.Exists(maxSearchSeconds=1):
-                result["accessible"] = True
-                result["message"] = "카카오톡 접근 가능"
-            else:
-                result["accessible"] = True
-                result["message"] = "채팅방은 찾았으나 메시지 목록 접근 불가"
-        else:
-            result["accessible"] = True
-            result["message"] = "UIA 컨트롤 생성 실패"
-
-    except ImportError:
-        result["accessible"] = True
-        result["message"] = "uiautomation 미설치 (기본 모드로 동작)"
-    except Exception as e:
-        result["accessible"] = True
-        result["message"] = f"UIA 체크 중 오류: {str(e)[:50]}"
-
-    return result
-
-
 def find_chat_window() -> Optional[int]:
     """첫 번째 열린 채팅방 hwnd. 없으면 None."""
     windows = _enumerate_kakaotalk_windows()
@@ -158,11 +96,6 @@ def find_main_window() -> Optional[int]:
     if main_windows:
         return main_windows[0].hwnd
     return None
-
-
-def get_active_chat_windows() -> list[KakaoWindow]:
-    windows = _enumerate_kakaotalk_windows()
-    return [w for w in windows if w.is_chat]
 
 
 def find_kakaotalk_window() -> Optional[int]:
@@ -185,7 +118,7 @@ def is_kakaotalk_chat_window(hwnd: int) -> bool:
         # 클래스명이 EVA_Window_Dblclk이고
         # 메인 창 제목이 아니고, 제외 목록에 없는 것
         if class_name == KAKAOTALK_WINDOW_CLASS:
-            if title not in EXCLUDE_TITLES and title != MAIN_WINDOW_TITLE:
+            if title not in EXCLUDE_TITLES and title != KAKAOTALK_WINDOW_TITLE:
                 return True
 
         return False
@@ -194,10 +127,16 @@ def is_kakaotalk_chat_window(hwnd: int) -> bool:
 
 
 def is_kakaotalk_window(hwnd: int) -> bool:
-    """메인/채팅방/메뉴 모두 포함."""
+    """메인/채팅방/메뉴 모두 포함. NVDA isGoodUIAWindow 패턴.
+
+    카카오톡 창은 모두 EVA_* 접두사 사용. Chrome_* 광고 웹뷰는 제외.
+    개별 클래스명 나열 대신 접두사로 판별하여 미래 윈도우 클래스 자동 대응.
+    """
     try:
         class_name = win32gui.GetClassName(hwnd)
-        return class_name == KAKAOTALK_WINDOW_CLASS or class_name == KAKAOTALK_MENU_CLASS
+        if class_name.startswith(CHROME_CLASS_PREFIX):
+            return False
+        return class_name.startswith("EVA_")
     except Exception:
         return False
 
@@ -207,18 +146,6 @@ def is_kakaotalk_menu_window(hwnd: int) -> bool:
     try:
         class_name = win32gui.GetClassName(hwnd)
         return class_name == KAKAOTALK_MENU_CLASS
-    except Exception:
-        return False
-
-
-def is_topmost_window(hwnd: int) -> bool:
-    """TopMost 창인지 확인 (메뉴, 팝업 등 '떠있는' 창).
-
-    NVDA shouldAcceptEvent 패턴: WS_EX_TOPMOST 플래그로 떠있는 창 감지.
-    """
-    try:
-        ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-        return bool(ex_style & win32con.WS_EX_TOPMOST)
     except Exception:
         return False
 
@@ -267,15 +194,16 @@ def filter_kakaotalk_hwnd(sender, include_menu: bool = True) -> Optional[int]:
 # ListItem은 hwnd가 없어서 포그라운드에 의존하는데,
 # 사용자가 다른 앱으로 전환해도 최근 카카오톡 hwnd로 이벤트 처리 가능
 _kakaotalk_hwnd_cache: dict = {"hwnd": None, "time": 0.0}
-KAKAOTALK_HWND_CACHE_TTL = 5.0  # 5초
+_kakaotalk_hwnd_cache_lock = threading.RLock()
 
 
 def get_cached_kakaotalk_hwnd() -> Optional[int]:
     """캐싱된 카카오톡 hwnd 반환. TTL 초과 또는 창 닫힘 시 None."""
     global _kakaotalk_hwnd_cache
     log = _get_log()
-    cached_hwnd = _kakaotalk_hwnd_cache["hwnd"]
-    cached_time = _kakaotalk_hwnd_cache["time"]
+    with _kakaotalk_hwnd_cache_lock:
+        cached_hwnd = _kakaotalk_hwnd_cache["hwnd"]
+        cached_time = _kakaotalk_hwnd_cache["time"]
 
     if not cached_hwnd:
         log.trace("hwnd cache: empty")
@@ -283,14 +211,15 @@ def get_cached_kakaotalk_hwnd() -> Optional[int]:
 
     # TTL 체크
     elapsed = time.time() - cached_time
-    if elapsed > KAKAOTALK_HWND_CACHE_TTL:
+    if elapsed > TIMING_HWND_CACHE_TTL:
         log.trace(f"hwnd cache: TTL expired ({elapsed:.1f}s)")
         return None
 
     # 창 유효성 체크
     if not win32gui.IsWindow(cached_hwnd):
         log.trace(f"hwnd cache: window invalid ({cached_hwnd})")
-        _kakaotalk_hwnd_cache = {"hwnd": None, "time": 0.0}
+        with _kakaotalk_hwnd_cache_lock:
+            _kakaotalk_hwnd_cache = {"hwnd": None, "time": 0.0}
         return None
 
     log.trace(f"hwnd cache: hit ({cached_hwnd}, {elapsed:.1f}s)")
@@ -301,15 +230,9 @@ def update_kakaotalk_hwnd_cache(hwnd: int) -> None:
     """카카오톡 hwnd 캐시 갱신."""
     global _kakaotalk_hwnd_cache
     log = _get_log()
-    _kakaotalk_hwnd_cache = {"hwnd": hwnd, "time": time.time()}
+    with _kakaotalk_hwnd_cache_lock:
+        _kakaotalk_hwnd_cache = {"hwnd": hwnd, "time": time.time()}
     log.trace(f"hwnd cache: updated ({hwnd})")
-
-
-def find_kakaotalk_menu_window() -> Optional[int]:
-    """visible한 EVA_Menu 찾기. 캐시 TTL 적용."""
-    # 순환 import 방지를 위해 lazy import
-    from .utils.menu_handler import get_menu_handler
-    return get_menu_handler().find_menu_window()
 
 
 def _enumerate_kakaotalk_windows() -> list[KakaoWindow]:
@@ -332,7 +255,7 @@ def _enumerate_kakaotalk_windows() -> list[KakaoWindow]:
 
                 # 메인 창: "카카오톡" 정확히 일치
                 # 채팅방 창: 그 외 (상대방 이름)
-                is_main = title == MAIN_WINDOW_TITLE
+                is_main = title == KAKAOTALK_WINDOW_TITLE
                 result.append(
                     KakaoWindow(
                         hwnd=hwnd,
@@ -363,6 +286,47 @@ def get_client_rect(hwnd: int) -> tuple[int, int, int, int]:
     bottom = top + client_rect[3]
 
     return (left, top, right, bottom)
+
+
+# =============================================================================
+# hwnd → 카카오톡 여부 캐시 (FocusChanged 이벤트 필터링 최적화)
+# =============================================================================
+# FocusChanged 전역 이벤트에서 매번 GetClassName 호출하는 비용을 줄이기 위함.
+# 79%가 외부 앱 이벤트 → dict lookup으로 즉시 버림.
+_hwnd_class_cache: dict[int, bool] = {}
+_hwnd_class_cache_lock = threading.Lock()
+
+
+def is_kakaotalk_hwnd_cached(hwnd: int) -> bool:
+    """카카오톡 hwnd 여부. GetClassName 결과를 캐시."""
+    if not hwnd:
+        return False
+
+    with _hwnd_class_cache_lock:
+        cached = _hwnd_class_cache.get(hwnd)
+        if cached is not None:
+            return cached
+
+    # 캐시 미스: GetClassName 호출 (최초 1회만)
+    result = is_kakaotalk_window(hwnd)
+
+    with _hwnd_class_cache_lock:
+        _hwnd_class_cache[hwnd] = result
+        # 캐시 크기 제한 (hwnd 재사용 대비)
+        if len(_hwnd_class_cache) > CACHE_HWND_CLASS_MAX_SIZE:
+            keys = list(_hwnd_class_cache.keys())[:CACHE_HWND_CLASS_EVICT_COUNT]
+            for k in keys:
+                del _hwnd_class_cache[k]
+
+    return result
+
+
+def invalidate_hwnd_class_cache() -> None:
+    """닫힌 창의 hwnd 캐시 항목 제거."""
+    with _hwnd_class_cache_lock:
+        invalid = [h for h in _hwnd_class_cache if not win32gui.IsWindow(h)]
+        for h in invalid:
+            del _hwnd_class_cache[h]
 
 
 def bring_window_to_front(hwnd: int) -> bool:
